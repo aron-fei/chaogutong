@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A股市场监控台</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">📈 A股市场监控台 <a href="/workbench" style="margin-left:14px;font-size:12px;color:#656d76;text-decoration:none;border:1px solid #d0d7de;padding:3px 10px;border-radius:5px;">🧰 我的工作台</a></div>
+  <div class="status-area">
+    <span id="market-status" class="pill">连接中…</span>
+    <span id="clock" class="clock">--:--:--</span>
+    <span class="fresh" id="fresh-info" title="各数据源最后更新时间">数据源: --</span>
+  </div>
+</header>
+
+<!-- 指数卡片区 -->
+<section class="index-row" id="index-row">
+  <div class="idx-card skeleton"></div>
+  <div class="idx-card skeleton"></div>
+  <div class="idx-card skeleton"></div>
+  <div class="idx-card skeleton"></div>
+</section>
+
+<!-- 主区域三栏 -->
+<main class="grid">
+  <!-- 左栏：板块 -->
+  <section class="col col-sector">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>板块涨幅榜</h2>
+        <span class="hint">同花顺行业 · 每12s</span>
+      </div>
+      <div class="scroll"><table class="tbl sortable-table" id="tbl-sector-pct">
+        <thead><tr>
+          <th class="sortable" data-sort="name">板块<span class="sort-arrow"></span></th>
+          <th class="sortable sort-active" data-sort="pct">涨跌%<span class="sort-arrow">▼</span></th>
+          <th class="sortable" data-sort="speed_1m">涨速/分<span class="sort-arrow"></span></th>
+          <th class="sortable" data-sort="net_inflow">净流入<span class="unit">亿</span><span class="sort-arrow"></span></th>
+          <th>领涨股</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- 中栏：涨停/情绪 -->
+  <section class="col col-zt">
+    <div class="stat-row">
+      <div class="stat-card"><div class="num" id="stat-zt">-</div><div class="lbl">涨停</div></div>
+      <div class="stat-card down"><div class="num" id="stat-dt">-</div><div class="lbl">跌停</div></div>
+      <div class="stat-card warn"><div class="num" id="stat-zb">-</div><div class="lbl">炸板</div></div>
+      <div class="stat-card hot"><div class="num" id="stat-lb">-</div><div class="lbl">最高连板</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>🐉 龙头候选雷达 <span class="tag-hot">NEW</span></h2>
+        <span class="hint" id="dragon-hint">四因子×情绪系数</span>
+      </div>
+      <div class="scroll"><table class="tbl" id="tbl-dragon">
+        <thead><tr>
+          <th>#</th><th>股票</th><th>板</th><th>总分</th><th>标签</th><th>操作提示</th>
+        </tr></thead>
+        <tbody><tr><td colspan="6" style="text-align:center;color:#8c959f;padding:16px;">等待涨停池数据…</td></tr></tbody>
+      </table></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <h2>连板天梯</h2>
+        <span class="hint">≥2板</span>
+      </div>
+      <div class="ladder" id="ladder"></div>
+    </div>
+    <div class="panel panel-grow">
+      <div class="panel-head">
+        <h2>涨停池</h2>
+        <span class="hint" id="zt-hint"></span>
+      </div>
+      <div class="scroll"><table class="tbl" id="tbl-zt">
+        <thead><tr>
+          <th>股票</th><th>连板</th><th>行业</th><th>封板</th><th>炸板</th><th>额<span class="unit">亿</span></th>
+        </tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </div>
+  </section>
+
+  <!-- 右栏：异动筛选 -->
+  <section class="col col-screen">
+    <div class="panel panel-grow">
+      <div class="panel-head">
+        <h2>个股异动雷达</h2>
+        <div class="tabs" id="screen-tabs">
+          <button data-tab="speed_up" class="active">⚡涨速</button>
+          <button data-tab="top_gainers">涨幅</button>
+          <button data-tab="top_amount">成交额</button>
+        </div>
+      </div>
+      <div class="scroll"><table class="tbl" id="tbl-screen">
+        <thead><tr id="screen-head">
+          <th>股票</th><th>现价</th><th>涨速</th><th>涨跌%</th><th>额<span class="unit">亿</span></th>
+        </tr></thead>
+        <tbody></tbody>
+      </table></div>
+      <div class="hint pad" id="screen-hint">筛选条件：成交额≥3亿</div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h2>⚠️ 炸板池</h2><span class="hint" id="zb-hint"></span></div>
+      <div class="scroll"><table class="tbl" id="tbl-zb">
+        <thead><tr><th>股票</th><th>现涨%</th><th>炸板次</th><th>行业</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h2>跌停池</h2></div>
+      <div class="scroll"><table class="tbl" id="tbl-dt">
+        <thead><tr><th>股票</th><th>跌幅%</th><th>额<span class="unit">亿</span></th><th>行业</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+    </div>
+  </section>
+</main>
+
+<!-- 底部市场宽度 -->
+<footer class="breadth-bar">
+  <div class="breadth-left">
+    <span class="b-label">市场宽度</span>
+    <span class="b-up" id="b-up">涨 -</span>
+    <div class="b-bar"><div class="b-fill-up" id="b-fill"></div></div>
+    <span class="b-down" id="b-down">跌 -</span>
+    <span class="b-flat" id="b-flat">平 -</span>
+  </div>
+  <div class="breadth-right">
+    <span id="b-sentiment">情绪: --</span>
+  </div>
+</footer>
+
+<div class="toast" id="toast"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,54 @@
+#!/bin/bash
+# launchd 兜底脚本（v2）：工作日 9:10 确保工作台服务运行 + 激活 WorkBuddy 到前台
+# 目的：让 WorkBuddy 自动化调度器在 9:15 前处于活跃状态，从而准点在【WorkBuddy 内置浏览器预览面板】打开工作台
+# 说明：本脚本不打开系统默认浏览器，只负责「服务就绪 + WorkBuddy 前台活跃」两个前置条件，
+#      真正打开内置预览面板的是 WorkBuddy 自动化 automation-1788167123852（工作日 09:15，present_files 调用）
+# 由 ~/Library/LaunchAgents/com.williamli.market-monitor.open.plist 触发（Weekday 1-5 @ 9:10）
+
+PORT=8765
+LOG=/tmp/market-monitor.log
+PIDFILE=/tmp/market-monitor.pid
+PY=/opt/homebrew/anaconda3/bin/python3
+APP_DIR=/Users/williamli/Work/market-monitor
+WB_APP="/Applications/WorkBuddy.app"
+HEALTH_URL="http://127.0.0.1:${PORT}/api/health"
+
+# 1) 确保工作台服务在运行（端口 LISTEN 为准）
+LISTEN_PID=$(lsof -nP -iTCP:${PORT} -sTCP:LISTEN 2>/dev/null | tail -1 | awk '{print $2}')
+if [ -z "$LISTEN_PID" ]; then
+  echo "[$(date '+%F %T')] launchd兜底: 端口 ${PORT} 无监听，拉起服务..." >> "${LOG}.watchdog"
+  cd "$APP_DIR" || exit 1
+  nohup "$PY" "$APP_DIR/daemon_launcher.py" > "${LOG}.watchdog" 2>&1 &
+  # 等待服务就绪（最长 40s）
+  for i in $(seq 1 40); do
+    sleep 1
+    OK=$(curl -s --noproxy '*' -m 2 "$HEALTH_URL" 2>/dev/null | grep -c '"ok":true')
+    [ "$OK" -ge 1 ] && break
+  done
+else
+  echo "$LISTEN_PID" > "$PIDFILE" 2>/dev/null
+fi
+
+# 2) 激活 WorkBuddy 到前台（若未运行则启动它）——保证 9:15 时调度器活跃，自动化准点在内置预览打开
+if [ -d "$WB_APP" ]; then
+  open -a "$WB_APP"
+  echo "[$(date '+%F %T')] launchd兜底: 已激活 WorkBuddy（调度器将保持活跃，9:15 自动化在内置预览打开工作台）" >> "${LOG}.watchdog"
+else
+  echo "[$(date '+%F %T')] launchd兜底: 警告 WorkBuddy 应用不存在: $WB_APP" >> "${LOG}.watchdog"
+fi
+
+# 3) 二次前台激活兜底（v3）：冷启动时 WorkBuddy 主进程/调度器就绪可能需数分钟，
+#    若 9:15 调度 tick 时尚未就绪，自动化会顺延至 9:20。这里等到 9:14:50 再次激活，
+#    确保 9:15 tick 前一瞬应用已就绪且置前（低风险：仅工作日再次 bring-to-front）。
+TARGET_HM="09:14:50"
+NOW_EPOCH=$(date +%s)
+TARGET_EPOCH=$(date -j -f "%H:%M:%S" "$TARGET_HM" "+%s" 2>/dev/null)
+if [ -n "$TARGET_EPOCH" ] && [ "$TARGET_EPOCH" -gt "$NOW_EPOCH" ]; then
+  SLEEP_S=$((TARGET_EPOCH - NOW_EPOCH))
+  sleep "$SLEEP_S"
+  if [ -d "$WB_APP" ]; then
+    open -a "$WB_APP"
+    echo "[$(date '+%F %T')] launchd兜底: 09:14:50 二次激活 WorkBuddy 完成（为 9:15 自动化准点执行兜底）" >> "${LOG}.watchdog"
+  fi
+fi
+exit 0

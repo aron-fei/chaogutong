@@ -1,0 +1,47 @@
+# market-monitor 项目级忽略规则（2026-11-05 体检 P0-2）
+# 注意：*.bak* / *.orig / *.rej 由全局 ~/.gitignore_global 统一忽略，此处不重复。
+
+# ---- 密钥 / 隐私 / 用户资产数据（绝不入库）----
+data/access_key.json
+portfolio.json
+data/suggestion_state.json
+data/reviews/
+data/suggestions/
+data/review_modes/
+data/gate_history/
+
+# ---- 运行时抓取产物与缓存 ----
+data/*cache*/
+data/a_codes.json
+data/bottom_surge_latest.json
+data/daily_amount.json
+data/fut_kline_cache.json
+data/fut_profile.json
+data/fut_sector_map.json
+data/fut_watchlist.json
+data/gene_board.json
+data/theme_library.json
+data/us_a_map.json
+data/watchlist.json
+__pycache__/
+*.py[cod]
+*.log
+
+# ---- 验证产物 / 截图 / 打包输出 ----
+.verify_shots/
+.playwright-cli/
+reports_shots/
+dist/
+*.png
+!docs/**/*.png
+
+# ---- 工具托管数据（WorkBuddy 项目数据/备份快照，非源码，勿删勿入库）----
+.workbuddy/
+
+# ---- 本地临时快照 / 编辑器 ----
+x.yaml
+zt_init.yaml
+zt_snap.yaml
+.vscode/
+.idea/
+.DS_Store

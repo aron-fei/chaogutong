@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="TszpIJjMui0n7az62BbG5b">
+<head data-page-node-id="rMULLYcPAH8YJhjsmP7KUi">
+<meta charset="utf-8" data-page-node-id="JCGFrcKYP0tOITk3ybzb0R">
+<meta name="viewport" content="width=device-width,initial-scale=1" data-page-node-id="WFGeiNR0PNVJBqudNGMNby">
+<title>market-monitor · 多市场扩展设计示意</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #f6f8fa; color: #1f2328;
+         font: 13px/1.55 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  .wrap { display: grid; grid-template-columns: 196px 1fr; gap: 14px; padding: 14px;
+          align-items: start; width: 100%; min-height: 100vh; }
+  @media (max-width: 760px) { .wrap { grid-template-columns: 1fr; } }
+
+  .topbar { display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+            background: #fff; border-bottom: 1px solid #d0d7de; flex-wrap: wrap; }
+  .brand { font-weight: 600; font-size: 14px; }
+  .brand small { color: #8c959f; font-weight: 400; font-size: 11px; margin-left: 6px; }
+  .spacer { flex: 1; }
+  .pill { border-radius: 999px; padding: 2px 10px; font-size: 12px; border: 1px solid #d0d7de; color: #57606a; }
+  .pill.trading { color: #1a7f37; border-color: #afd8b3; background: #eaf3de; }
+  .pill.closed { color: #8c959f; background: #eaeef2; }
+  .pill.bid { color: #9a6700; border-color: #f2cc60; background: #fff8c5; }
+  .clock { font-family: "SF Mono", Menlo, monospace; font-size: 12.5px; color: #57606a; }
+  .mk { font-size: 11px; color: #8c959f; }
+
+  .side { background: #fff; border: 1px solid #d0d7de; border-radius: 10px; overflow: hidden; }
+  .side-hd { padding: 9px 12px; border-bottom: 1px solid #d0d7de; font-weight: 600; font-size: 12.5px;
+             background: #f6f8fa; }
+  .mkt-seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 10px; }
+  .mkt-seg button { border: 1px solid #d0d7de; background: #fff; border-radius: 7px; padding: 6px 2px;
+                    font-size: 11.5px; color: #57606a; cursor: pointer; text-align: center; }
+  .mkt-seg button:hover { border-color: #0969da; color: #0969da; }
+  .mkt-seg button.active { background: #0969da; border-color: #0969da; color: #fff; font-weight: 600; }
+  .mkt-seg button .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+                         background: #8c959f; margin-right: 3px; vertical-align: 1px; }
+  .mkt-seg button .dot.on { background: #2da44e; }
+  .mkt-seg button .dot.off { background: #8c959f; }
+  .nav-list { padding: 4px 8px 10px; border-top: 1px solid #eaeef2; }
+  .nav-item { display: flex; align-items: center; gap: 7px; padding: 7px 10px; border-radius: 7px;
+              cursor: default; color: #1f2328; border-left: 3px solid transparent; }
+  .nav-item.sel { background: #e8eef6; color: #0969da; font-weight: 600; border-left-color: #0969da; }
+  .nav-item.new { background: #fff8c5; color: #7d4e00; font-size: 12px; }
+  .nav-item.dim { color: #8c959f; font-size: 12px; }
+  .nav-item small { color: #8c959f; font-weight: 400; font-size: 10.5px; margin-left: auto; }
+  .side-foot { padding: 8px 12px; border-top: 1px solid #eaeef2; font-size: 11px; color: #8c959f;
+               background: #f6f8fa; }
+
+  .main { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+  .panel { background: #fff; border: 1px solid #d0d7de; border-radius: 10px; overflow: hidden; }
+  .phd { display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-bottom: 1px solid #d0d7de;
+         flex-wrap: wrap; }
+  .phd h3 { margin: 0; font-size: 13px; font-weight: 600; }
+  .phd .note { margin-left: auto; font-size: 11px; color: #8c959f; }
+  .phd .note b { color: #57606a; }
+
+  .shell { display: flex; align-items: center; gap: 10px; padding: 8px 14px; flex-wrap: wrap;
+           border-bottom: 1px dashed #d0d7de; background: #fcfdfd; font-size: 12px; color: #57606a; }
+  .shell .s { display: flex; align-items: center; gap: 6px; }
+  .shell .s b { color: #1f2328; font-weight: 600; }
+  .tag { font-size: 10.5px; padding: 1px 7px; border-radius: 4px; background: #eaeef2; color: #656d76; }
+  .tag.lag { background: #fff8c5; color: #9a6700; }
+
+  .idx-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding: 12px 14px; }
+  @media (max-width: 900px) { .idx-row { grid-template-columns: repeat(2, 1fr); } }
+  .idx { border: 1px solid #eaeef2; border-radius: 9px; padding: 9px 11px; background: #fff; }
+  .idx .nm { font-size: 12px; color: #57606a; display: flex; justify-content: space-between; }
+  .idx .pr { font-size: 17px; font-weight: 600; font-family: "SF Mono", Menlo, monospace; margin: 3px 0 1px; }
+  .up { color: #cf222e; } .down { color: #1a7f37; } .flat { color: #656d76; }
+  .idx .sb { font-size: 11px; color: #8c959f; }
+
+  .tabs { display: flex; gap: 2px; padding: 10px 14px 0; border-bottom: 1px solid #eaeef2; }
+  .tabs button { border: none; background: none; padding: 7px 14px; font-size: 12.5px; color: #57606a;
+                 cursor: pointer; border-bottom: 2px solid transparent; border-radius: 6px 6px 0 0; }
+  .tabs button.active { color: #0969da; font-weight: 600; border-bottom-color: #0969da; background: #f0f6ff; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 7px 12px; font-size: 12.5px; white-space: nowrap; }
+  thead th { color: #656d76; font-weight: 500; font-size: 11.5px; border-bottom: 1px solid #eaeef2; }
+  tbody tr { border-bottom: 1px solid #f0f1f2; }
+  tbody tr:last-child { border-bottom: none; }
+  .c { text-align: right; font-variant-numeric: tabular-nums; }
+  .pc { font-weight: 600; }
+  .mono { font-family: "SF Mono", Menlo, monospace; }
+  .sec { padding: 12px 14px; }
+  .blk { border: 1px solid #eaeef2; border-radius: 9px; margin-bottom: 10px; overflow: hidden; }
+  .blk-hd { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: #f6f8fa;
+            font-weight: 600; font-size: 12.5px; border-bottom: 1px solid #eaeef2; }
+  .blk-hd .r { margin-left: auto; font-weight: 400; font-size: 11px; color: #8c959f; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 12px; }
+  .chip { font-size: 11.5px; padding: 3px 9px; border-radius: 999px; border: 1px solid #d0d7de; color: #57606a; }
+  .chip b { color: #cf222e; }
+  .foot { padding: 8px 14px; font-size: 11px; color: #8c959f; background: #f6f8fa; border-top: 1px solid #eaeef2; }
+  .sample { border-top: 1px dashed #d0d7de; padding: 6px 14px; font-size: 11px; color: #b35900;
+            background: #fff8f0; }
+</style>
+</head>
+<body data-page-node-id="SO4RwQwLNrlUFpz4HQCsAW">
+
+<div class="topbar" data-page-node-id="7iuJE514Mh1ROKMQ2Zm5Fl">
+  <div class="brand" data-page-node-id="3xvTU40Jok7GzsR7twbvmS">🧰 我的工作台 <small data-page-node-id="KQAXCTZGF3kjRMatWlnZpt">多市场扩展 · 交互示意原型（静态数据，非实时）</small></div>
+  <div class="spacer" data-page-node-id="AVAVHE9jIJcjKXOmUopV45"></div>
+  <span class="pill trading" data-page-node-id="IyOFSyXrn6sqG3zcvF23Mk">● A股已收盘（示意）</span>
+  <span class="clock" id="clock" data-page-node-id="RwAgGcE9sIdQWjpcp3fSkZ">--:--:--</span>
+  <span class="mk" data-page-node-id="dBg0e22NEhgog7fIo6ARDe">本地时钟 · 北京时间</span>
+</div>
+
+<div class="wrap" data-page-node-id="8p3x1tiBafLDHHMDy96uNi">
+  <aside class="side" data-page-node-id="yzBJZ6gHZ3yx2rfmdZRQIr">
+    <div class="side-hd" data-page-node-id="B0zGcGn21aeVCcPCKeqxly">市场切换（第一层维度）</div>
+    <div class="mkt-seg" id="mkt-seg" data-page-node-id="yRoQUT3tbOD8FXN6glgEFS">
+      <button data-mk="ash" class="active" data-page-node-id="XmrC18EAH3yt8XBRO8fxwW"><span class="dot on" data-page-node-id="0K5kJqC7lsE8M4ACKSjWay"></span>A股</button>
+      <button data-mk="hk" data-page-node-id="hAJFeWdGj8Ljmoq0sJEAHh"><span class="dot on" data-page-node-id="dATjRVFOj5EGQylCb5CsiL"></span>港股</button>
+      <button data-mk="us" data-page-node-id="LCHZTOR6cAe6oXJCC2Rw3D"><span class="dot off" data-page-node-id="sIpJoz9ivJXpp7Fz3HsCDM"></span>美股隔夜</button>
+      <button data-mk="fut" data-page-node-id="T4PFEvM4jtbz8yVLnT18As"><span class="dot on" data-page-node-id="3NrQ6IOoWQzJ9H8DivLPwE"></span>国内期货</button>
+      <button data-mk="glob" data-page-node-id="tydR2NAXYkwKQxyUFgv3On"><span class="dot on" data-page-node-id="RHXi2tyDaBA2e8z4V11iHB"></span>外盘商品</button>
+    </div>
+    <div class="side-hd" data-page-node-id="1Xs9ojp4UURfSMspOlLZ4D">功能 tab（第二层，随市场变化）</div>
+    <div class="nav-list" id="nav-list" data-page-node-id="WzY9guZiUI6yUcOG6nhAva"></div>
+    <div class="side-foot" data-page-node-id="DrelgsOsOGc7Z5zil4lu5s">hash 记忆当前市场（#mk=…），手机重连保持。</div>
+  </aside>
+
+  <main class="main" data-page-node-id="IhakFdvfsYGth5xRo5ioNb">
+    <div class="panel" data-page-node-id="a5rUwIWN3U3ZLEItZhMW5z">
+      <div class="phd" data-page-node-id="ZVUCnF1qPM2T1rsl7WAj64">
+        <h3 id="pt-title" data-page-node-id="uTctXkq4i89McrKajJwFM2">—</h3>
+        <span class="note" id="pt-source" data-page-node-id="gEC1C5BK1QWjeK4SXiXMI6"></span>
+      </div>
+      <div class="shell" id="pt-shell" data-page-node-id="BACN3wZwd3djomHyrvaB3n"></div>
+      <div id="pt-body" data-page-node-id="xSpsl8EtdhdGeeBk2x1wEd"></div>
+      <div class="sample" data-page-node-id="aqAcku6y1WbTuJ0BMIhXXv">⚠ 本页为设计方案评审用的静态原型：数字为示意值，仅展示「市场切换 + 指标 tab」的信息架构，非实时行情。</div>
+    </div>
+  </main>
+</div>
+
+<script>
+"use strict";
+const $ = s => document.querySelector(s);
+
+const red = n => n > 0 ? '<span class="up pc">+' + n.toFixed(2) + '%</span>' : n < 0
+  ? '<span class="down pc">' + n.toFixed(2) + '%</span>' : '<span class="flat pc">0.00%</span>';
+const priceCls = n => n > 0 ? 'up' : n < 0 ? 'down' : 'flat';
+
+const MK = {
+  ash: {
+    name: 'A股（现有 13 tab，零回归）',
+    state: { txt: '已收盘', cls: 'closed' }, source: '腾讯 qt · 同花顺 · 东财 · 新浪（现状不变）', lag: false,
+    indices: [
+      { n: '上证指数', v: '3951.36', c: '+9.97', p: +0.25, s: '额 6,480亿' },
+      { n: '深证成指', v: '13428.15', c: '+12.60', p: +0.09, s: '额 8,112亿' },
+      { n: '创业板指', v: '2280.44', c: '-8.02', p: -0.35, s: '额 3,905亿' },
+      { n: '科创50', v: '1246.90', c: '-14.31', p: -1.14, s: 'MA20 上方' },
+    ],
+    nav: [
+      { t: '📊 大盘速览 / 🔥 板块涨幅', k: 'overview', sel: true },
+      { t: '🎯 联动观察（新增，开盘前看）', k: 'link', cls: 'new' },
+      { t: '⚡ 个股异动 · 龙头 · 涨停池 · 风险池', k: 'ov' },
+      { t: '⏰ 时段建议 · 💼 持仓 · 📋 复盘 · 🧘 心法', k: 'ov' },
+      { t: '⭐ 自选股池·DK点 / 📰 时段报告', k: 'ov' },
+    ],
+    tabs: [['ov', '市场行情族（现状）'], ['link', '🔗 联动观察'], ['wl', '自选']],
+    linkage: [
+      { hd: '① 隔夜美股 → A股映射链', note: '按题材库 theme_library 映射', chips: ['NVDA +3.2% → 算力/CPO <b>高开预期↑</b>', 'TSLA -1.1% → 锂电 <b>承压↓</b>', '苹果 +0.8% → 果链 <b>偏强↑</b>', '台积电 +2.4% → 半导体 <b>高开预期↑</b>'] },
+      { hd: '② 夜盘期货 → 今日板块', note: '昨 21:00-今 02:30', chips: ['铁矿 -1.8% → 钢铁 <b>低开预期↓</b>', '原油 +1.2% → 油服/化工 <b>偏强↑</b>', '沪铜 +0.9% → 有色 <b>偏强↑</b>', '黄金 +0.6% → 贵金属 <b>平开</b>'] },
+      { hd: '③ 港股开盘 45min 快照（09:15 前参考）', note: 'A股开盘前港股已交易 45 分钟', chips: ['恒指 +0.4%', '腾讯 +0.9%', '南向净流入 +12亿', '中概互联 +1.1%'] },
+    ]
+  },
+  hk: {
+    name: '港股',
+    state: { txt: '交易中', cls: 'trading' }, source: '腾讯 qt（hk 前缀，实测 10:43 可用）', lag: false,
+    indices: [
+      { n: '恒生指数', v: '25406.94', c: '+95.73', p: +0.38, s: '额 1,249亿' },
+      { n: '恒生国企', v: '9125.30', c: '+28.44', p: +0.31, s: '额 512亿' },
+      { n: '恒生科技', v: '5210.77', c: '+66.15', p: +1.29, s: '额 388亿' },
+      { n: '腾讯控股', v: '438.60', c: '+0.40', p: +0.09, s: '00700 · HKD' },
+    ],
+    nav: [
+      { t: '📊 港股概览', k: 'overview', sel: true },
+      { t: '🔥 行业涨幅', k: 'sector' },
+      { t: '⚡ 涨幅/成交额榜', k: 'gain' },
+      { t: '⭐ 港股自选 (hk*)', k: 'wl' },
+    ],
+    tabs: [['overview', '概览'], ['sector', '行业涨幅'], ['gain', '涨幅榜'], ['wl', '自选']],
+    sectorRows: [['资讯科技业', '+1.52', '小米集团 +3.1%'], ['医疗保健', '-0.85', '药明生物 -1.4%'],
+      ['金融业', '+0.31', '汇丰 +0.6%'], ['地产建筑业', '-0.42', '新鸿基 -0.8%'],
+      ['必需性消费', '+0.18', '农夫山泉 +0.5%'], ['公用事业', '-0.11', '中电 -0.2%']],
+    gainRows: [['小米集团-W', '18.44', '+3.19'], ['商汤-W', '2.05', '+6.77'], ['药明合联', '31.8', '-2.45'], ['美团-W', '128.6', '+1.34'], ['中芯国际', '28.35', '+0.89']],
+    watchRows: [['腾讯控股', '00700', '438.60', '+0.09'], ['美团-W', '03690', '128.60', '+1.34'], ['港交所', '00388', '318.00', '-0.31']]
+  },
+  us: {
+    name: '美股（隔夜）',
+    state: { txt: '已收盘（美东 09-02）', cls: 'closed' }, source: '腾讯 qt（us 前缀）· 非 tick 延迟', lag: true,
+    indices: [
+      { n: '道琼斯', v: '53061.95', c: '+295.07', p: +0.56, s: '09-02 收盘' },
+      { n: '纳斯达克', v: '20118.22', c: '-41.20', p: -0.20, s: '09-02 收盘' },
+      { n: '标普500', v: '6377.66', c: '+10.85', p: +0.17, s: '09-02 收盘' },
+      { n: '费城半导体', v: '5928.30', c: '+80.14', p: +1.37, s: 'NVDA 领涨' },
+    ],
+    nav: [
+      { t: '📊 隔夜概览', k: 'overview', sel: true },
+      { t: '🔥 中概股榜', k: 'cpop' },
+      { t: '⚡ 热门科技', k: 'hot' },
+      { t: '⭐ 美股自选 (us*)', k: 'wl' },
+    ],
+    tabs: [['overview', '概览'], ['cpop', '中概股'], ['hot', '热门科技'], ['wl', '自选']],
+    cpopRows: [['阿里巴巴', 'BABA', '98.42', '+1.21'], ['拼多多', 'PDD', '141.6', '-0.86'], ['京东', 'JD', '41.85', '+2.10'], ['理想汽车', 'LI', '29.4', '-3.26'], ['网易', 'NTES', '112.9', '+0.44']],
+    hotRows: [['英伟达', 'NVDA', '224.41', '+3.21'], ['特斯拉', 'TSLA', '342.5', '-1.12'], ['苹果', 'AAPL', '246.9', '+0.82'], ['台积电', 'TSM', '268.3', '+2.40'], ['微软', 'MSFT', '512.4', '+0.26']],
+    watchRows: [['英伟达', 'NVDA', '224.41', '+3.21'], ['苹果', 'AAPL', '246.90', '+0.82'], ['特斯拉', 'TSLA', '342.50', '-1.12']]
+  },
+  fut: {
+    name: '国内期货',
+    state: { txt: '日盘交易中', cls: 'trading' }, source: '新浪主连（nf_）· akshare 兜底', lag: false,
+    indices: [
+      { n: '沪深300 IF 主连', v: '4538.8', c: '-22.4', p: -0.49, s: '股指 · 日盘' },
+      { n: '螺纹钢 RB 主连', v: '3721.0', c: '-18.0', p: -0.48, s: '黑色' },
+      { n: '沪铜 CU 主连', v: '74680', c: '+460', p: +0.62, s: '有色' },
+      { n: '原油 SC 主连', v: '588.6', c: '+7.1', p: +1.22, s: '能化' },
+    ],
+    nav: [
+      { t: '📊 期货概览', k: 'overview', sel: true },
+      { t: '🏭 板块涨幅（黑色/有色/能化/农产品/贵金属）', k: 'sector' },
+      { t: '🌙 夜盘关注（21:00 起）', k: 'night' },
+      { t: '⭐ 期货自选 (主连)', k: 'wl' },
+    ],
+    tabs: [['overview', '概览'], ['sector', '板块榜'], ['night', '夜盘关注'], ['wl', '自选']],
+    sectorRows: [['能化', '+0.85', '原油 +1.22%'], ['有色', '+0.52', '沪铜 +0.62%'], ['贵金属', '+0.41', '沪金 +0.5%'], ['黑色系', '-0.63', '铁矿 -1.8%'], ['农产品', '-0.20', '豆粕 -0.6%'], ['股指期货', '-0.42', 'IF -0.49%']],
+    nightRows: [['夜盘时段', '21:00 - 次日 02:30（按品种）', '状态：待开盘'], ['关键品种', '原油/铜/金/螺纹', '隔夜外盘联动标的'], ['次日映射', '铁矿-1.8% → 钢铁板块低开预期', '开盘前自动推送']],
+    watchRows: [['沪深300', 'IF0', '4538.8', '-0.49'], ['螺纹钢', 'RB0', '3721.0', '-0.48'], ['沪金', 'AU0', '588.6', '+1.22']]
+  },
+  glob: {
+    name: '外盘商品',
+    state: { txt: '交易中（连续）', cls: 'trading' }, source: '新浪 hf_ 族（hf_GC 实测可用）', lag: false,
+    indices: [
+      { n: '纽约黄金', v: '4464.9', c: '+21.4', p: +0.48, s: 'COMEX · 连续' },
+      { n: 'WTI 原油', v: '88.42', c: '+1.02', p: +1.17, s: 'NYMEX · 连续' },
+      { n: 'LME 铜', v: '10140', c: '+68', p: +0.68, s: 'LME · 连续' },
+      { n: '美元指数', v: '101.84', c: '-0.22', p: -0.22, s: 'DXY' },
+    ],
+    nav: [
+      { t: '📊 外盘概览', k: 'overview', sel: true },
+      { t: '📈 全品种涨跌榜', k: 'list' },
+      { t: '🔁 内外盘比价（与国内期货）', k: 'arb' },
+    ],
+    tabs: [['overview', '概览'], ['list', '涨跌榜'], ['arb', '内外盘比价']],
+    listRows: [['黄金', 'COMEX', '4464.9', '+0.48'], ['白银', 'COMEX', '52.31', '+1.03'], ['WTI原油', 'NYMEX', '88.42', '+1.17'], ['布伦特', 'ICE', '91.5', '+0.95'], ['伦铜', 'LME', '10140', '+0.68'], ['伦铝', 'LME', '2712', '-0.31']],
+    arbRows: [['黄金', '沪金 588.6 vs 外盘 4464.9', '溢价 +1.2% 平水'], ['铜', '沪铜 74680 vs 外盘 10140', '进口利润 微正'], ['原油', 'SC 588.6 vs WTI 88.42', '到岸贴水']]
+  }
+};
+
+let curMk = 'ash', curTab = 'overview';
+const seg = $('#mkt-seg'), navList = $('#nav-list'), ptTitle = $('#pt-title'),
+      ptSource = $('#pt-source'), ptShell = $('#pt-shell'), ptBody = $('#pt-body');
+
+function cardsHtml(list) {
+  return '<div class="idx-row">' + list.map(i => `
+    <div class="idx"><div class="nm"><span>${i.n}</span><span class="mono">${i.c}</span></div>
+    <div class="pr ${priceCls(i.p)}">${i.v}</div>
+    <div class="nm"><span>${red(i.p)}</span><span class="sb">${i.s}</span></div></div>`).join('') + '</div>';
+}
+function tblHtml(cols, rows, pctIdx) {
+  return `<div class="sec" style="padding:0"><div class="sec" style="padding:0"><table><thead><tr>
+    ${cols.map(c => `<th class="${c.right ? 'c' : ''}">${c.t}</th>`).join('')}</tr></thead><tbody>` +
+    rows.map(r => '<tr>' + r.map((v, i) => i === pctIdx ? `<td class="c ${v > 0 ? 'up' : v < 0 ? 'down' : 'flat'} pc">${v > 0 ? '+' : ''}${v}%</td>` : `<td class="${cols[i] && cols[i].right ? 'c mono' : ''}">${v}</td>`).join('') + '</tr>').join('') +
+    '</tbody></table></div></div>';
+}
+function linkageHtml(m) {
+  return '<div class="sec">' + m.linkage.map(b => `
+    <div class="blk"><div class="blk-hd">${b.hd}<span class="r">${b.note}</span></div>
+    <div class="chips">${b.chips.map(c => `<span class="chip">${c}</span>`).join('')}</div></div>`).join('') + '</div>';
+}
+function renderNav() {
+  const m = MK[curMk];
+  navList.innerHTML = m.nav.map(n => `
+    <div class="nav-item ${n.cls || ''} ${n.k === curTab ? 'sel' : ''}"
+         data-k="${n.k}">${n.t}</div>`).join('');
+  navList.querySelectorAll('.nav-item[data-k]').forEach(el => {
+    el.addEventListener('click', () => { curTab = el.dataset.k; paint(); });
+  });
+}
+function renderTabs() {
+  const m = MK[curMk];
+  const strip = '<div class="tabs" id="mt-tabs">' + m.tabs.map(t =>
+    `<button class="${t[0] === curTab ? 'active' : ''}" data-t="${t[0]}">${t[1]}</button>`).join('') + '</div>';
+  return strip;
+}
+function paint() {
+  const m = MK[curMk];
+  if (!m.tabs.some(t => t[0] === curTab)) curTab = m.tabs[0][0];
+  seg.querySelectorAll('button').forEach(b => b.classList.toggle('active', b.dataset.mk === curMk));
+  ptTitle.textContent = '📊 ' + m.name;
+  ptSource.innerHTML = '数据源: ' + m.source + (m.lag ? ' &nbsp;<span class="tag lag">~15min 延迟（免费源）</span>' : ' &nbsp;<span class="tag">实测可用</span>');
+  ptShell.innerHTML = `
+    <span class="s">⏱ 本地 <b class="mono" id="lcl">${lcl()}</b></span>
+    <span class="s">状态 <span class="pill ${m.state.cls}">● ${m.state.txt}</span></span>
+    <span class="s">最后更新 <b>${m.extraTxt || '示意'}</b></span>
+    <span class="s">市场外壳 MarketShell（统一）</span>`;
+  let body = renderTabs();
+  if (curTab === 'overview' || curTab === 'ov') body += cardsHtml(m.indices) + footNote(m);
+  else if (curTab === 'link') body += linkageHtml(m);
+  else if (curTab === 'sector') body += tblHtml([{t:'板块/品种'},{t:'涨跌%',right:true},{t:'代表标的'}], m.sectorRows, 1);
+  else if (curTab === 'gain' || curTab === 'cpop' || curTab === 'hot' || curTab === 'list')
+    body += tblHtml([{t:'名称'},{t:'代码',right:false},{t:'现价',right:true},{t:'涨跌%',right:true}],
+      curTab === 'gain' ? m.gainRows : curTab === 'cpop' ? m.cpopRows : curTab === 'hot' ? m.hotRows : m.listRows, 3);
+  else if (curTab === 'arb' || curTab === 'night')
+    body += tblHtml([{t:'项目'},{t:'对比'},{t:'结论'}], curTab === 'arb' ? m.arbRows : m.nightRows, -1);
+  else if (curTab === 'wl')
+    body += tblHtml([{t:'名称'},{t:'代码'},{t:'现价',right:true},{t:'涨跌%',right:true}], m.watchRows || [], 3);
+  ptBody.innerHTML = body;
+  ptBody.querySelectorAll('#mt-tabs button').forEach(b =>
+    b.addEventListener('click', () => { curTab = b.dataset.t; paint(); }));
+}
+function footNote(m) {
+  const notes = {
+    ash: '<div class="foot">现有 13 个业务 tab（时段建议/持仓/复盘/心法等）结构不变、零回归；本市场只新增「联动观察」入口。</div>',
+    fut: '<div class="foot">板块按 黑色/有色/能化/农产品/贵金属/股指 分组；夜盘时段状态机独立判定。</div>'
+  };
+  return notes[m] || '<div class="foot">榜单族表格 · 沿用现有 sortable 表头与涨幅榜渲染组件。</div>';
+}
+function lcl() { const n = new Date();
+  return `${String(n.getHours()).padStart(2,'0')}:${String(n.getMinutes()).padStart(2,'0')}:${String(n.getSeconds()).padStart(2,'0')}`; }
+
+seg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+  curMk = b.dataset.mk; curTab = 'overview'; paint(); renderNav();
+  try { location.hash = 'mk=' + curMk; localStorage.setItem('wb-market', curMk); } catch (e) {}
+}));
+(function init() {
+  let m = 'ash';
+  try {
+    if (location.hash.indexOf('mk=') >= 0) m = location.hash.split('mk=')[1].split('&')[0];
+    else m = localStorage.getItem('wb-market') || 'ash';
+  } catch (e) {}
+  curMk = MK[m] ? m : 'ash'; curTab = 'overview';
+  renderNav(); paint();
+  setInterval(() => { const c = $('#clock'), l = $('#lcl');
+    if (c) c.textContent = lcl(); if (l) l.textContent = lcl(); }, 1000);
+})();
+</script>
+</body>
+</html>
