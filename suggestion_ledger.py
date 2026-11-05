@@ -25,6 +25,7 @@ suggestion_ledger.py · 复盘建议台账（2026-10-19 新增）
     python3 suggestion_ledger.py --set <id> <status>   # 更新状态
     python3 suggestion_ledger.py --selftest
 """
+import config
 
 import argparse
 import json
@@ -35,7 +36,7 @@ from datetime import datetime
 from pathlib import Path
 
 BASE = Path(__file__).parent
-REPORTS = Path("/Users/williamli/Work/reports")
+REPORTS = config.REPORTS_DIR
 STATE_FILE = BASE / "data" / "suggestion_state.json"
 
 # 状态机定义（唯一合法取值）

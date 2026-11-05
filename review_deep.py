@@ -17,6 +17,7 @@
 只读模块：不改动任何买卖通道，不写回测库。
 """
 import json
+import log_util
 import threading
 import time
 from datetime import date, datetime, timedelta
@@ -141,8 +142,10 @@ def is_trading_day(d=None):
         import akshare as ak
         df = ak.tool_trade_date_hist_sina()
         ok = key in {str(x)[:10] for x in df["trade_date"].tolist()}
-    except Exception:
-        pass
+
+    except Exception as _e:
+        log_util.quiet_warn("review_deep.py:145", _e)
+
     with _LOCK:
         _TRADE_DAY_CACHE[key] = ok
     return ok
@@ -157,8 +160,10 @@ def _prev_trade_date():
             for x in ds:
                 if x < today:
                     return x
-    except Exception:
-        pass
+
+    except Exception as _e:
+        log_util.quiet_warn("review_deep.py:161", _e)
+
     return None
 
 
@@ -571,8 +576,10 @@ def discipline(md, adv=None):
                 "text": f"{i.get('name')} {i.get('action')} 卖出建议未执行"
                         f"（现价 {i.get('price')}），卖出通道不通",
             })
-    except Exception:
-        pass
+
+    except Exception as _e:
+        log_util.quiet_warn("review_deep.py:575", _e)
+
 
     # c) 追高度：近期买入价 vs 买入当日最高价
     bt = None
@@ -630,8 +637,10 @@ def discipline(md, adv=None):
             try:
                 a = json.loads(f.read_text(encoding="utf-8"))
                 sig_n = len(a.get("exit") or [])
-            except Exception:
-                pass
+
+            except Exception as _e:
+                log_util.quiet_warn("review_deep.py:634", _e)
+
     if sig_n:
         notes.append(f"今日归档含 {sig_n} 条卖出/减仓信号，请逐条对照执行情况")
 
@@ -654,8 +663,10 @@ def discipline(md, adv=None):
                 "text": f"{code} 同时被 {', '.join(str(x) for x in stages)} 派单，"
                         f"跨时段未去重 → 敞口被重复放大",
             })
-    except Exception:
-        pass
+
+    except Exception as _e:
+        log_util.quiet_warn("review_deep.py:658", _e)
+
 
     violations.sort(key=lambda x: -x["level"])
     return {"violations": violations, "notes": notes,

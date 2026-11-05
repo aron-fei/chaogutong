@@ -21,6 +21,7 @@
 输出：板块热度榜 / 强势多头榜 / 弱势空头榜 / 每品种操作卡（方向/置信/止损/止盈/依据）
 """
 import os
+import log_util
 for _k in ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY",
            "all_proxy", "ALL_PROXY"]:
     os.environ.pop(_k, None)
@@ -162,8 +163,10 @@ class FuturesStrategy:
                 d = json.loads(self._cache_path.read_text())
                 self.kline = d.get("kline", {})
                 self.kline_date = d.get("asof")
-        except Exception:
-            pass
+
+        except Exception as _e:
+            log_util.quiet_warn("futures_strategy.py:166", _e)
+
 
     def _save_cache(self):
         try:
@@ -208,8 +211,10 @@ class FuturesStrategy:
                 if (datetime.now() - cached).days <= 3:
                     self._kline_dirty = False   # 缓存足够新，无需全量重拉
                     return
-            except Exception:
-                pass
+
+            except Exception as _e:
+                log_util.quiet_warn("futures_strategy.py:212", _e)
+
         ok = 0
         for i, code in enumerate(_KLINE_CODES):
             if self._stop.is_set():
@@ -219,8 +224,10 @@ class FuturesStrategy:
                 if kl:
                     self.kline[code] = kl
                     ok += 1
-            except Exception:
-                pass
+
+            except Exception as _e:
+                log_util.quiet_warn("futures_strategy.py:223", _e)
+
             time.sleep(0.05)
         # asof = 最新一根K的日期（应为上一交易日）
         last = None

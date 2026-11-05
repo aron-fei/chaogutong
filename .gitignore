@@ -12,6 +12,8 @@ data/gate_history/
 
 # ---- 运行时抓取产物与缓存 ----
 data/*cache*/
+data/theme_cons_cache.json
+data/theme_cons_cache.json.tmp
 data/a_codes.json
 data/bottom_surge_latest.json
 data/daily_amount.json

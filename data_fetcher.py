@@ -8,6 +8,7 @@
   全A    : 新浪 ak.stock_zh_a_spot()（慢，用于宽度与异动筛选）
 """
 import os
+import log_util
 import json
 from pathlib import Path
 
@@ -20,7 +21,7 @@ import threading
 import time
 import traceback
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import requests
 import akshare as ak
@@ -237,7 +238,9 @@ class MarketData:
         self.screen = {}             # 异动榜单
         self.stock_speed = {}        # code -> (ts, pct) 上一帧全A涨跌幅
         self._index_ma = {}          # code -> {ma20, ma30}
-        self._index_ma_at = 0.0      # 指数均线拉取时间戳（1h 缓存）
+        self._index_ma_at = 0.0      # 指数均线拉取时间戳（成功 1h / 失败 10min 退避）
+        self._index_ma_ok = False    # 上次是否成功，决定下次退避间隔
+        self._index_ma_warned = False  # 失败只提示一次，避免每轮刷屏（体检 P1-2）
         self._price_hist = deque(maxlen=20)   # [(ts, {code: pct})] 全A快照历史（5分钟涨幅计算）
         self.five_min_top = []       # 5分钟涨幅榜 top15
         self.five_min_at = None      # 榜单时间
@@ -292,12 +295,13 @@ class MarketData:
                 "high": float(p[33]), "low": float(p[34]),
                 "amount_yi": round(amount_wan / 1e4, 1),  # 亿
             })
-        # 指数均线 MA20/MA30（腾讯日K，1 小时缓存）
+        # 指数均线 MA20/MA30：成功 1 小时刷新；失败 10 分钟退避，避免每轮无效重试
         try:
-            if time.time() - self._index_ma_at > 3600:
+            interval = 3600 if self._index_ma_ok else 600
+            if time.time() - self._index_ma_at > interval:
                 self._refresh_index_ma()
-        except Exception:
-            pass
+        except Exception as e:
+            self._err("index-ma", e)
         ma_map = self._index_ma
         for it in out:
             it["ma20"] = ma_map.get("sh" + it["code"], {}).get("ma20")
@@ -305,27 +309,53 @@ class MarketData:
         if out:
             with self.lock:
                 self.indices = out
+                self.last_update["indices"] = datetime.now()  # 体检 P1-3：原缺失
 
     def _refresh_index_ma(self):
-        """拉上证指数日K算 MA20/MA30（防守维度1：破30日线进防守）。"""
+        """拉上证指数日K算 MA20/MA30（防守维度1：破30日线进防守）。
+
+        体检 P1-2：原腾讯 fqkline 端点已返回非 JSON，且失败不推进时间戳 →
+        每 5 秒重试一次 + 刷屏。现改为：
+          ① 主源 ak.stock_zh_index_daily（实测 0.3s / 8756 行），备源东财指数日K；
+          ② 无论成败都推进 _index_ma_at（成功 1h / 失败 10min 退避）；
+          ③ 失败只打印一次，恢复后重置提示位。
+        """
+        self._index_ma_at = time.time()   # 关键：成败都推进，杜绝高频重试
+        closes = []
+        src = ""
         try:
-            url = ("https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
-                   "?param=sh000001,day,,,40,qfq")
-            d = requests.get(url, timeout=8).json()
-            days = (d.get("data", {}).get("sh000001", {}).get("day")
-                    or d.get("data", {}).get("sh000001", {}).get("qfqday") or [])
-            closes = [float(x[2]) for x in days]
-            if len(closes) >= 30:
-                self._index_ma["sh000001"] = {
-                    "ma20": round(sum(closes[-20:]) / 20, 2),
-                    "ma30": round(sum(closes[-30:]) / 30, 2),
-                }
-                self._index_ma_at = time.time()
-                print(f"[MA] 指数均线 OK: "
-                      f"MA20={self._index_ma['sh000001']['ma20']} "
-                      f"MA30={self._index_ma['sh000001']['ma30']}")
+            df = ak.stock_zh_index_daily(symbol="sh000001")
+            if df is not None and len(df) >= 30 and "close" in df.columns:
+                closes = [float(x) for x in df["close"].tail(40).tolist()]
+                src = "sina"
         except Exception as e:
-            print(f"[MA] 均线拉取失败: {type(e).__name__}: {str(e)[:60]}")
+            print(f"[MA] 主源失败（转备源）: {type(e).__name__}: {str(e)[:80]}")
+        if not closes:
+            try:
+                end = datetime.now().strftime("%Y%m%d")
+                start = (datetime.now() - timedelta(days=120)).strftime("%Y%m%d")
+                df = ak.index_zh_a_hist(symbol="000001", period="daily",
+                                        start_date=start, end_date=end)
+                if df is not None and len(df) >= 30 and "收盘" in df.columns:
+                    closes = [float(x) for x in df["收盘"].tail(40).tolist()]
+                    src = "em"
+            except Exception as e:
+                print(f"[MA] 备源失败: {type(e).__name__}: {str(e)[:80]}")
+        if len(closes) >= 30:
+            self._index_ma["sh000001"] = {
+                "ma20": round(sum(closes[-20:]) / 20, 2),
+                "ma30": round(sum(closes[-30:]) / 30, 2),
+            }
+            if not self._index_ma_ok or self._index_ma_warned:
+                print(f"[MA] 指数均线 OK({src}): MA20={self._index_ma['sh000001']['ma20']} "
+                      f"MA30={self._index_ma['sh000001']['ma30']}")
+            self._index_ma_ok = True
+            self._index_ma_warned = False
+        else:
+            self._index_ma_ok = False
+            if not self._index_ma_warned:
+                print("[MA] 指数日K暂无可用数据，10 分钟后重试（本轮只提示一次）")
+                self._index_ma_warned = True
 
     # ---------------- 板块（同花顺） ----------------
     def fetch_concepts(self):
@@ -559,8 +589,10 @@ class MarketData:
                 # 非交易时段（午休/收盘）：快照冻结，5分钟涨幅无意义，清空
                 self.five_min_top = []
                 self.five_min_at = None
-        except Exception:
-            pass
+
+        except Exception as _e:
+            log_util.quiet_warn("data_fetcher.py:592", _e)
+
         # 全A总成交额（亿）→ 落盘日度 → 5日均量（防守维度2）
         try:
             total_amount = sum(r["amount_yi"] for r in rows)
@@ -613,8 +645,10 @@ class MarketData:
                     cache_file.parent.mkdir(parents=True, exist_ok=True)
                     cache_file.write_text(json.dumps({"ts": time.time(), "codes": codes}),
                                           encoding="utf-8")
-                except Exception:
-                    pass
+
+                except Exception as _e:
+                    log_util.quiet_warn("data_fetcher.py:646", _e)
+
             self._a_codes = codes
         codes = self._a_codes
         rows = []

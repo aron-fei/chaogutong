@@ -3,10 +3,11 @@
 用法: /opt/homebrew/anaconda3/bin/python3 daemon_launcher.py
 """
 import os
+import pathlib
 import sys
 import time
 
-APP_DIR = "/Users/williamli/Work/market-monitor"
+APP_DIR = str(pathlib.Path(__file__).resolve().parent)
 PY = os.path.join(APP_DIR, ".venv", "bin", "python") if os.path.exists(os.path.join(APP_DIR, ".venv", "bin", "python")) else sys.executable
 LOG = "/tmp/market-monitor.log"
 PIDFILE = "/tmp/market-monitor.pid"

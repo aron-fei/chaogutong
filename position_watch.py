@@ -37,6 +37,7 @@ qt [7]=外盘（主动买）[8]=内盘（主动卖），单位为「手」（科
 """
 
 import json
+import log_util
 import os
 import subprocess
 import threading
@@ -64,7 +65,7 @@ def _cfg(name, default):
 
 
 def _reports_dir():
-    p = _cfg("PW_REPORTS_DIR", "/Users/williamli/Work/reports")
+    p = _cfg("PW_REPORTS_DIR", str(config.REPORTS_DIR))
     return Path(p)
 
 
@@ -696,7 +697,7 @@ class PositionWatch:
         if not _cfg("PW_SELL_LOG_ENABLED", True):
             return
         try:
-            path = _cfg("PW_SELL_LOG_FILE", "/Users/williamli/Work/reports/pw_events.jsonl")
+            path = _cfg("PW_SELL_LOG_FILE", str(config.REPORTS_DIR / "pw_events.jsonl"))
             rec = {
                 "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "code": code, "name": name, "action": action,
@@ -966,8 +967,10 @@ class PositionWatch:
         try:
             raw = json.loads(_backtest_db_path().read_text(encoding="utf-8"))
             cash = float(raw.get("available_cash") or 0)
-        except Exception:
-            pass
+
+        except Exception as _e:
+            log_util.quiet_warn("position_watch.py:970", _e)
+
         return {
             "available_cash": _f(cash, 2),
             "holdings_value": _f(mv, 2),

@@ -33,8 +33,10 @@ ADR-0039 交付的复盘模式（review_deep.py 六引擎）解决了「看清�
 两边共用同一份 **数据契约**（本文件顶部的 _POLICY / 字段名），规则改动必须**同时**改两处。
 `review_gate.py --selftest` 会对比两边对同一组输入的判定是否一致。
 """
+import config
 
 import json
+import log_util
 import os
 import shutil
 import sys
@@ -42,7 +44,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 BASE = Path(__file__).parent
-REPORTS = Path("/Users/williamli/Work/reports")
+REPORTS = config.REPORTS_DIR
 GATE_FILE = REPORTS / "trade_gate.json"            # 复盘写 → 调度器读
 APPLIED_FILE = REPORTS / "trade_gate_applied.json"  # 调度器写 → 工作台读
 EFFECT_FILE = REPORTS / "gate_effectiveness.json"   # 复盘写 → 工作台读
@@ -233,15 +235,19 @@ def build_gate(review, mode=None, asof=None, write=True):
             hard = True
             hard_reasons.append("亏钱效应等级 %s/5：%s" % (
                 loss.get("level"), (loss.get("verdict") or "")[:60]))
-    except Exception:
-        pass
+
+    except Exception as _e:
+        log_util.quiet_warn("review_gate.py:237", _e)
+
     # 退潮/冰点 且 跌停 ≥50 → 一并硬阻断
     try:
         if stage in ("退潮", "冰点") and _to_int(sig.get("dt")) >= 50 and not hard:
             hard = True
             hard_reasons.append("跌停 %s 家，亏钱效应全面扩散" % sig.get("dt"))
-    except Exception:
-        pass
+
+    except Exception as _e:
+        log_util.quiet_warn("review_gate.py:244", _e)
+
 
     # ---- 冷却名单 / 未执行卖出提醒 ----
     violations = disc.get("violations") or []
@@ -765,8 +771,10 @@ def _selftest():
     (GATE_FILE, APPLIED_FILE, EFFECT_FILE, HISTORY_DIR) = _bak
     try:
         shutil.rmtree(_tmpd, ignore_errors=True)
-    except Exception:
-        pass
+
+    except Exception as _e:
+        log_util.quiet_warn("review_gate.py:769", _e)
+
     print("[selftest] 落盘目标已还原（本次自检写的是临时目录，未污染真实 reports/）")
     return 0 if ok else 1
 
@@ -801,8 +809,10 @@ def gate_health(today=None):
                 d = json.loads(cur.read_text(encoding="utf-8"))
                 if isinstance(d, dict) and str(d.get("asof"))[:10] == today.isoformat():
                     g_today = d
-        except Exception:
-            pass
+
+        except Exception as _e:
+            log_util.quiet_warn("review_gate.py:805", _e)
+
     g_next = None
     try:
         nxt = next_trade_date(today, include_today=False)
@@ -841,8 +851,10 @@ def gate_health(today=None):
             if is_trading_day(cur):
                 stale += 1
         out["stale_days"] = stale
-    except Exception:
-        pass
+
+    except Exception as _e:
+        log_util.quiet_warn("review_gate.py:845", _e)
+
     out["message"] = ("复盘闸门不可用：%s（买入闸门已 fail-open 放行，"
                       "复盘结论未约束选股）" % reason)
     return out

@@ -3,7 +3,7 @@
 
   - record()      盘中窗口内把当日建议落盘 data/suggestions/YYYY-MM-DD.json
                   （同策略同代码只记首条，保留建议时刻的入场参考价）
-  - review()      复盘：腾讯日K（web.ifzq.gtimg.cn，与行情同源无代理问题）
+  - review()      复盘：东财日K（ak.stock_zh_a_hist，腾讯 fqkline 端点已失效）
                   计算每条建议的次日收盘收益 / 次日最高冲高 / 是否达标 / 是否触止损，
                   汇总胜率、平均次日收益、达标率、止损率
   - today_records() 供卖点检测读取当日已建议标的（早盘强者恒强 / 尾盘补涨龙）
@@ -15,9 +15,11 @@
   - 胜        = 次日收益 > 0
 """
 import json
+import log_util
 import re
 import threading
-from datetime import date, datetime
+import time
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import requests
@@ -100,27 +102,56 @@ def today_records():
 
 
 # ---------------------------------------------------------------------------
-# 腾讯日K（与 qt.gtimg.cn 同源，无代理阻断问题）
+# 日K（体检 P1-1 根因修复：腾讯 web.ifzq.gtimg.cn/fqkline 已返回非 JSON，
+# 原实现每只票都失败并打一行日志，复盘接口因此稳定慢 11~13s 且刷屏）
 # ---------------------------------------------------------------------------
+_KLINE_CACHE = {}       # code -> (ts, [bars])  进程内 TTL，同轮复盘不重复拉
+_KLINE_LOCK = threading.Lock()
+_KLINE_TTL = 600
+
+
 def kline(code, n=15):
-    """日K线，返回 [{date, open, close, high, low}] 按日期升序。"""
-    sym = _qt_symbol(code)
-    if not sym:
-        return []
-    url = (f"https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
-           f"?param={sym},day,,,{n},qfq")
-    r = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": "Mozilla/5.0"})
-    d = r.json().get("data", {}).get(sym, {})
-    bars = d.get("qfqday") or d.get("day") or []
-    out = []
-    for b in bars:
-        try:
-            out.append({"date": b[0], "open": float(b[1]),
-                        "close": float(b[2]), "high": float(b[3]),
-                        "low": float(b[4])})
-        except (ValueError, IndexError):
-            continue
-    return out
+    """日K线，返回 [{date, open, close, high, low}] 按日期升序。
+
+    主源东财 ak.stock_zh_a_hist（实测 0.06s），备源新浪 ak.stock_zh_a_daily；
+    日期统一为 'YYYY-MM-DD' 字符串，保证与建议日 isoformat 的字典序比较正确。
+    """
+    now = time.time()
+    with _KLINE_LOCK:
+        hit = _KLINE_CACHE.get(code)
+        if hit and now - hit[0] < _KLINE_TTL:
+            return hit[1][-n:]
+    rows = []
+    try:
+        import akshare as ak
+        end = date.today()
+        start = end - timedelta(days=150)
+        df = ak.stock_zh_a_hist(symbol=str(code).zfill(6), period="daily",
+                                start_date=start.strftime("%Y%m%d"),
+                                end_date=end.strftime("%Y%m%d"), adjust="qfq")
+        for _, r in df.iterrows():
+            rows.append({"date": str(r["日期"])[:10], "open": float(r["开盘"]),
+                         "close": float(r["收盘"]), "high": float(r["最高"]),
+                         "low": float(r["最低"])})
+    except Exception as _e:
+        log_util.quiet_warn(f"review.kline.em:{code}", _e)
+    if not rows:
+        sym = _qt_symbol(code)
+        if sym:
+            try:
+                import akshare as ak
+                df = ak.stock_zh_a_daily(symbol=sym, adjust="qfq").tail(60)
+                for idx, r in df.iterrows():
+                    d = str(r.get("date", idx))[:10]
+                    rows.append({"date": d, "open": float(r["open"]),
+                                 "close": float(r["close"]), "high": float(r["high"]),
+                                 "low": float(r["low"])})
+            except Exception as _e:
+                log_util.quiet_warn(f"review.kline.sina:{code}", _e)
+    rows.sort(key=lambda x: x["date"])
+    with _KLINE_LOCK:
+        _KLINE_CACHE[code] = (now, rows)
+    return rows[-n:]
 
 
 def live_quote(codes):
@@ -149,10 +180,35 @@ def live_quote(codes):
 # ---------------------------------------------------------------------------
 # 复盘
 # ---------------------------------------------------------------------------
+def _prefetch_klines(files):
+    """并发预热日K缓存：10 天建议约 120 只不同标的，串行 0.1s/只 ≈ 12s。
+    并发 10 路后约 1~2s，且失败由各源的降级逻辑兜住，不影响复盘主流程。"""
+    codes = set()
+    for f in files:
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+        except Exception as _e:
+            log_util.quiet_warn(f"review.prefetch.read:{f.name}", _e)
+            continue
+        for strat in ("strong", "lagging"):
+            for it in data.get(strat, []):
+                c = str(it.get("code") or "").zfill(6)
+                if c and c.isdigit():
+                    hit = _KLINE_CACHE.get(c)
+                    if not hit or time.time() - hit[0] >= _KLINE_TTL:
+                        codes.add(c)
+    if not codes:
+        return
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        list(ex.map(lambda c: kline(c, 15), codes))
+
+
 def review(max_days=10):
     """汇总最近 max_days 个交易日的建议准确率。"""
     files = sorted(SUG_DIR.glob("*.json"), reverse=True)[:max_days] \
         if SUG_DIR.exists() else []
+    _prefetch_klines(files)
     today = date.today().isoformat()
     kcache = {}
     days, stats = [], {"strong": [], "lagging": []}
@@ -287,8 +343,10 @@ def _account_review(adv):
                     reduce_rows.append({"name": r.get("name"), "code": r.get("code"),
                                         "pct": r.get("pct"), "advice": r.get("advice"),
                                         "scope": r.get("scope")})
-        except Exception:
-            pass
+
+        except Exception as _e:
+            log_util.quiet_warn("review.py:291", _e)
+
     else:
         # 盘中：用 advisor 实时信号
         try:
@@ -302,8 +360,10 @@ def _account_review(adv):
                     reduce_rows.append({"name": r.get("name"), "code": r.get("code"),
                                         "pct": r.get("pct"), "advice": r.get("advice"),
                                         "scope": r.get("scope")})
-        except Exception:
-            pass
+
+        except Exception as _e:
+            log_util.quiet_warn("review.py:306", _e)
+
     return {
         "positions": len(pos),
         "market_value": s.get("market_value"),

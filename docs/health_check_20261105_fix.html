@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>工作台体检 · 修复复检报告 · 2026-11-05</title>
+<style>
+  :root{
+    --bg:#ffffff; --panel:#f6f8fa; --line:#d0d7de; --line2:#eaecef;
+    --tx:#1f2328; --tx2:#57606a; --tx3:#8c959f;
+    --p0:#cf222e; --p1:#bc4c00; --p2:#9a6700; --p3:#0969da; --ok:#1a7f37;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);
+       font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",Arial,sans-serif;
+       font-size:14px;line-height:1.65}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 24px 60px}
+  h1{font-size:26px;margin:0 0 6px}
+  h2{font-size:19px;margin:34px 0 12px;padding-bottom:8px;border-bottom:2px solid var(--line)}
+  h3{font-size:15px;margin:0 0 8px}
+  .sub{color:var(--tx3);font-size:12.5px;margin-bottom:18px}
+  .hero{display:flex;gap:14px;flex-wrap:wrap;margin:18px 0 24px}
+  .card{flex:1;min-width:190px;border:1px solid var(--line);border-radius:10px;
+        background:var(--panel);padding:14px 16px}
+  .card .n{font-size:26px;font-weight:800;line-height:1.2}
+  .card .l{font-size:11.5px;color:var(--tx3)}
+  .ok{color:var(--ok)} .warn{color:var(--p2)} .bad{color:var(--p0)}
+  .banner{border:1px solid var(--ok);background:#f0fff4;border-radius:10px;
+          padding:12px 16px;margin:16px 0 26px;font-size:13px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin:10px 0 20px}
+  th,td{border:1px solid var(--line2);padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:var(--panel);font-weight:700;color:var(--tx2)}
+  td.st{white-space:nowrap;font-weight:700}
+  code{background:var(--panel);padding:1px 5px;border-radius:4px;font-size:11.5px}
+  .tag{display:inline-block;font-size:10.5px;padding:1px 7px;border-radius:9px;
+       border:1px solid var(--line);color:var(--tx2);margin-right:4px}
+  ul{margin:6px 0 14px;padding-left:22px} li{margin:3px 0}
+  .foot{color:var(--tx3);font-size:11.5px;border-top:1px solid var(--line);margin-top:32px;padding-top:12px}
+  a{color:var(--p3)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>工作台体检 · 修复复检报告</h1>
+  <div class="sub">基线报告：<a href="health_check_20261105.html">docs/health_check_20261105.html</a>（68/100）　·　复检时间：2026-11-05 16:10　·　服务 build <code>1610xx</code>，端口 8765</div>
+
+  <div class="banner">
+    <b>结论：P0 全清、P1 全清、P2 七项中六项已修 / 一项部分收敛。</b>
+    综合评分由 <b>68 → 92</b>。剩余未处理项均为「需你拍板的策略项」或「一次性迁移脚本」，
+    不影响正确性与可用性。所有改动已通过 15 项自动化回归、28 条路由探测、浏览器 0 error 验收。
+  </div>
+
+  <div class="hero">
+    <div class="card"><div class="n ok">2 / 2</div><div class="l">P0 安全项修复</div></div>
+    <div class="card"><div class="n ok">5 / 5</div><div class="l">P1 正确性项修复</div></div>
+    <div class="card"><div class="n ok">6+1</div><div class="l">P2 已修 / 部分收敛</div></div>
+    <div class="card"><div class="n ok">15</div><div class="l">自动化回归用例（全绿 4.1s）</div></div>
+    <div class="card"><div class="n ok">28 / 28</div><div class="l">GET 路由无 5xx</div></div>
+  </div>
+
+  <h2>一、逐项落地状态</h2>
+  <table>
+    <thead><tr><th style="width:70px">编号</th><th>原问题</th><th style="width:88px">状态</th><th>落地方式与证据</th></tr></thead>
+    <tbody>
+      <tr><td>P0-1</td><td>403 页面明文回显 ACCESS_KEY；cookie 用 <code>==</code> 比较</td><td class="st ok">已修复</td><td><code>app.access_gate</code>：403 只提示「从本机 <code>data/access_key.json</code> 查密钥」，不再拼接密钥；cookie 改 <code>secrets.compare_digest</code> 并加空值保护。回归用例 <code>test_gate_never_echoes_key</code> 断言 403 body 不含密钥。</td></tr>
+      <tr><td>P0-2</td><td>项目 0 commit、无 .gitignore，回滚能力为零</td><td class="st ok">已修复</td><td>项目独立 <code>git init</code> + 首个基线 commit <code>5f01df8</code>（103 文件）。<code>.gitignore</code> 排除密钥、真实持仓、运行时缓存、验证截图、<code>.workbuddy/</code>；<code>*.bak*</code> 由全局忽略统一覆盖。暂存前已做敏感文件扫描，结果 clean。</td></tr>
+      <tr><td>P1-1</td><td><code>/api/review</code>、<code>/api/daily_review</code> 稳定 11–13s，无缓存无兜底</td><td class="st ok">已修复（含根因）</td><td>① <code>app._cached</code> TTL 120s + <code>?refresh=1</code> 强制刷新 + 生成失败回吐上次成功值（标注 <code>_cache.stale</code> / <code>_warning</code>）；② 根因：腾讯 <code>fqkline</code> 日 K 端点已失效，<code>review.kline</code> 改走东财 <code>stock_zh_a_hist</code>（0.06s）/ 新浪备源 + 进程内 TTL；③ 10 天约 121 只标的改并发预热。<b>实测：11–13s → 首次 4.4s；接口层二次 3–23ms；全路由探测 <code>/api/review</code> 23ms、<code>/api/daily_review</code> 3ms。</b></td></tr>
+      <tr><td>P1-2</td><td>指数 MA20/30 链路失效，每 5s 无效重试刷屏</td><td class="st ok">已修复</td><td><code>data_fetcher._refresh_index_ma</code> 换主源 <code>ak.stock_zh_index_daily</code>（备东财），<b>成败都推进 <code>_index_ma_at</code></b>（成功 1h / 失败 10min 退避），失败只提示一次。单测：0.40s 拿到 MA20=3707.63 / MA30=3768.50，并成功注入指数快照。</td></tr>
+      <tr><td>P1-3</td><td><code>indices</code> 新鲜度戳恒 null</td><td class="st ok">已修复</td><td><code>fetch_indices</code> 成功时补写 <code>last_update["indices"] = datetime.now()</code>。单测返回 <code>2026-11-05 15:58:01</code>。</td></tr>
+      <tr><td>P1-4</td><td>30 处 <code>except Exception: pass</code>，违反交付铁律</td><td class="st ok">已清零</td><td>新增 <code>log_util.quiet_warn</code>（同 tag 60s 内只打一次并汇总抑制数），11 个模块 30 处全部改为可追溯告警；<b>静态扫描残留 0</b>。修的过程中发现 app.py 的自动插入误落进 docstring，用 AST 校验后已纠正，避免运行期 NameError。</td></tr>
+      <tr><td>P1-5</td><td>零自动化测试，25 个模块无回归保护</td><td class="st ok">已修复</td><td><code>tests/test_smoke.py</code> 15 项：静态铁律 / 门禁不回显密钥 / 健康端点结构 / 慢缓存命中与 stale / 题材聚合家数优先 / 字辈白名单 / 伪概念过滤 / 一股多题材与行业兜底 等。<code>python3 -m unittest discover -s tests -v</code> → OK 4.1s。</td></tr>
+      <tr><td>P2-1</td><td>README 严重过时（仍写 index.html / 暗色 / 5s 刷新）</td><td class="st ok">已重写</td><td>按现状写：6 组 16 视图树形导航、板块涨停分布 v2、真实持仓 vs 50 万模拟盘口径、数据源与失效端点清单、launchd 重启、验证流程、运维脚本。</td></tr>
+      <tr><td>P2-2</td><td>Obsidian 项目档案断链</td><td class="st ok">已修复</td><td>上一阶段已补 <code>06-项目档案/market-monitor.md</code>（端口 / launchd / 模块 / 口径 / 四时段调度真相）。</td></tr>
+      <tr><td>P2-3</td><td>日志无轮转 + MA / tqdm 刷屏</td><td class="st ok">已修复</td><td>MA 刷屏由 P1-2 消除、K 线刷屏由 P1-1 根因消除；新增 <code>scripts/rotate_logs.sh</code>（&gt;10MB 才切，gzip 归档 + <b>截断而非 mv</b>，避免 launchd 持有旧 fd，保留 7 份），默认 DRY_RUN，实测输出预览且不改动磁盘。</td></tr>
+      <tr><td>P2-4</td><td><code>/api/health</code> 过简，无法用于监控</td><td class="st ok">已修复</td><td>扩展为 <code>uptime_s</code> / 线程存活表 / <code>last_update</code> + 最近错误 / 慢缓存年龄 / 题材索引状态 / 被抑制异常统计 / 闸门摘要，纯内存读取，实测 2ms。</td></tr>
+      <tr><td>P2-5</td><td>16 处硬编码绝对路径</td><td class="st warn">部分收敛</td><td><b>生产代码已清零</b>：<code>config.BASE_DIR / REPORTS_DIR / MARKET_ADVISOR_SCRIPT</code> 统一基准（支持 <code>REPORTS_DIR</code> 等环境变量），app / review_gate / suggestion_ledger / recap_confirm / position_watch / daemon_launcher / 两个运维脚本共 12 处改为引用。剩余 7 处集中在 <code>migrate_suggestion_state.py</code>、<code>scripts/test_p05_gate_autofix.py</code> 等一次性迁移/验证脚本，刻意保留（它们绑定本机一次性操作，改了反而失去可复现性）。</td></tr>
+      <tr><td>P2-6</td><td>缓存与备份只增不减（99MB）</td><td class="st ok">已提供工具</td><td><code>scripts/prune_caches.py</code>：默认 DRY_RUN，按 mtime 淘汰过期 K 线缓存（保留 7 天）与临时文件，单批上限 500、失败即停；<b>默认不动 <code>.bak</code> 备份</b>（需显式 <code>--include-bak</code> 且 &gt;90 天）。实测 DRY_RUN 报告 1651 文件 / 19.3MB，磁盘零改动。删除属销毁性操作，按约定不自动执行，留给你确认后再 <code>--apply</code>。</td></tr>
+      <tr><td>P2-7</td><td>依赖无版本锁</td><td class="st ok">已修复</td><td><code>requirements.lock.txt</code> 锁定 akshare 1.18.21 / Flask 3.1.0 / requests 2.32.3 / pandas 2.2.3 等 9 项实测版本，并注明「升级前先跑测试集 + <code>theme_board.py --warm</code>」。</td></tr>
+    </tbody>
+  </table>
+
+  <h2>二、本轮额外交付（用户新需求，非体检项）</h2>
+  <h3>1. 页面结构：一级 tab → 展开二级菜单</h3>
+  <ul>
+    <li>侧栏由「6 组 + 内容区横向子标签」改为<b>树形可展开菜单</b>：点一级展开缩进的二级视图，再点当前组折叠；内容区顶部改为面包屑（一级 › 当前视图）+ 统一取数时间状态条。</li>
+    <li>二级项沿用原 DOM 节点「移动」而非克隆，badge id 与事件绑定零丢失；侧栏加宽到 218px、隐藏冗余身份徽标、强制 nowrap，解决长名称换行。</li>
+    <li>验收：6 组逐组展开、16 视图切换、可见 section 恒为 1 个，控制台 <b>0 error / 0 warning</b>。</li>
+  </ul>
+  <h3>2. 板块涨停分布：细分题材 + 家数优先 + 二级下钻</h3>
+  <ul>
+    <li>新增 <code>theme_board.py</code>：东财 531 个概念 → 过滤伪概念 → 涨幅前 110 + 常驻题材并发拉成分股 → 「个股 → 多题材」反向索引（实测 140 题材 / 4020 成分股 / 38s，本地缓存重启秒级可用，接口挂了自动降级行业兜底并前端明确标注）。</li>
+    <li>别名合并把近义概念收敛成看得懂的主线：<b>光模块·CPO / 商业航天 / 光伏新技术 / 人形机器人 / 固态电池</b>；另有「X字辈」自动发现（白名单限生肖祥瑞字，实测把 11 个假字辈噪音清零）。</li>
+    <li>排序改为<b>涨停家数降序</b>（用户要求「最多的板块放最前」），可切最高连板 / 板块涨幅 / 涨速；维度可切「细分题材 / 一级行业」。</li>
+    <li>卡片默认折叠、前 3 自动展开，点击下钻成分股表格（股票/连板/涨幅/封板资金/额/首封/行业）+ 连板梯队；支持搜索、<code>≥2家</code> 过滤、全部展开、显示其余板块。</li>
+    <li>口径诚实：题材级无权威资金流，卡片标「主行业资金\* / 涨速\* 近似」；行业维度给腾讯板块榜原始值，不编造数据。</li>
+  </ul>
+  <p>今日实测（84 只涨停 / 97 个题材板块）：光伏概念 20 家、算力概念 15 家、人工智能 14 家、储能概念 10 家、商业航天 7 家、光伏新技术 8 家、固态电池 5 家；伪概念（连续亏损 / 最近多板 / 高市盈率）已全部过滤。</p>
+
+  <h2>三、复测证据</h2>
+  <table>
+    <thead><tr><th>项目</th><th>修复前</th><th>修复后</th></tr></thead>
+    <tbody>
+      <tr><td><code>/api/review</code></td><td>11,716 ~ 11,933 ms</td><td class="ok">23 ms（首次生成 4.4s，TTL 内命中缓存）</td></tr>
+      <tr><td><code>/api/daily_review</code></td><td>11,121 ~ 13,160 ms</td><td class="ok">3 ms</td></tr>
+      <tr><td>指数 MA20/30</td><td>恒失败 + 每 5s 刷屏</td><td class="ok">0.40s 成功，MA20 3707.63 / MA30 3768.50</td></tr>
+      <tr><td><code>last_update.indices</code></td><td>null</td><td class="ok">15:58:01</td></tr>
+      <tr><td><code>except: pass</code></td><td>30 处</td><td class="ok">0 处</td></tr>
+      <tr><td>自动化测试</td><td>0</td><td class="ok">15 项 / 4.1s / 全绿</td></tr>
+      <tr><td>GET 路由</td><td>31 条（含 5xx 风险）</td><td class="ok">28 条 0 个 5xx、0 个异常</td></tr>
+      <tr><td>git 基线</td><td>0 commit</td><td class="ok">基线 commit + 修复提交</td></tr>
+      <tr><td>浏览器验收</td><td>—</td><td class="ok">6 组 16 视图 / 卡片下钻 / 维度切换 / 搜索 / 0 error</td></tr>
+    </tbody>
+  </table>
+  <p>验证截图：<code>.verify_shots/themev2_1_tree_default.png</code> ~ <code>themev2_7_last_group.png</code>（树形导航、板块家数排序、二级下钻、行业维度、搜索）。</p>
+
+  <h2>四、剩余项 / 需你拍板</h2>
+  <ul>
+    <li><span class="tag">新发现</span><code>/api/bottom_surge</code> 本次全路由探测耗时 13.1s（原报告未列）。属 M8 底部雷达整轮扫描，已有后台刷新机制；是否要纳入下一轮优化，等你确认。</li>
+    <li><span class="tag">P3</span>今日报告 ready 但 <code>dispatch_count=0</code>，首板过滤 / 闸门是否过严 —— 策略项，未擅自动。</li>
+    <li><span class="tag">P3</span>market-advisor 调度器 <code>intraday_alert</code> 弹窗是否也收敛为语音/静默 —— 策略项，未擅自动。</li>
+    <li><span class="tag">P3</span>密钥明文存 <code>data/access_key.json</code>、LAN 经 HTTP <code>?k=</code> 明文传递（机制合理，风险远低于已修的 P0-1）。</li>
+    <li><span class="tag">保留</span>一次性迁移/验证脚本里的绝对路径、<code>.bak</code> 备份与过期 K 线缓存的<b>实际删除</b>：工具已备好且默认 DRY_RUN，需你确认后加 <code>--apply</code>。</li>
+  </ul>
+
+  <div class="foot">
+    复检命令：<code>python3 -m unittest discover -s tests -v</code> · <code>python3 theme_board.py --selftest</code> ·
+    <code>python3 log_util.py</code> · <code>python3 review_gate.py --health / --selftest</code> ·
+    <code>bash scripts/rotate_logs.sh</code> · <code>python3 scripts/prune_caches.py</code> · 浏览器逐组验收。
+    <br>本报告为基线体检的修复状态记录，基线报告保留不改，便于对照。
+  </div>
+</div>
+</body>
+</html>

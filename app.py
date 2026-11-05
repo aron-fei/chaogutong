@@ -5,6 +5,7 @@
 访问: http://127.0.0.1:8765
 """
 import data_fetcher  # 侧效应：清代理环境变量，必须最先导入
+import log_util
 
 from flask import Flask, jsonify, render_template, request, redirect, url_for, send_file, g
 from pathlib import Path
@@ -23,11 +24,14 @@ import fut_advisor  # M6 期货超短顾问（T+0 日内信号，ADR-0026）
 import sprite  # M7 短线精灵异动引擎（全局事件流，data_fetcher 直接喂数据）
 import mood_engine  # 情绪周期（首板雷达的大盘/情绪闸门）
 import board_rank  # M7 板块榜（腾讯官方 speed 涨速字段，替代失效的 THS 板块涨速）
+import theme_board  # M10 细分题材引擎（东财概念成分股反向索引，2026-11-05）
 import bottom_radar  # M8 底部放量雷达（ADR-0033，缓存+后台刷新，扫描整轮 5~6s）
 import position_watch  # M9 持仓实时跟踪（ADR-0034，交易时段逐帧评估持仓 → 分层操作建议+异动）
 from datetime import datetime
 import json
 import secrets
+import threading
+import time
 
 app = Flask(__name__)
 # 防止浏览器/代理缓存模板（开发期频繁改动，老缓存会导致用户看不到新版）
@@ -109,18 +113,23 @@ fut_strategy = futures_strategy.FuturesStrategy(fut)  # M5 期货策略（消费
 lk = linkage.LinkageData(md, hk, us, fut)  # M4 联动观察（无独立线程，聚合）
 fadv = fut_advisor.instance(fs=fut_strategy)  # M6 超短顾问（消费 fut_strategy 主连日K算 ATR）
 brank = board_rank.instance()  # M7 板块榜（腾讯官方涨速，喂 sprite）
+tboard = theme_board.instance()  # M10 细分题材反向索引（缓存优先，失败降级行业兜底）
 
 # M7 短线精灵：注入「关注股」来源（自选股池 + 持仓）→ 这些股的任何异动弹最高级提醒
 def _sprite_focus():
     codes = set()
     try:
         codes |= {str(i.get("code")) for i in watchlist.list_items() if i.get("code")}
-    except Exception:
-        pass
+
+    except Exception as _e:
+        log_util.quiet_warn("app.py:123", _e)
+
     try:
         codes |= {str(p.get("code")) for p in portfolio.list_positions() if p.get("code")}
-    except Exception:
-        pass
+
+    except Exception as _e:
+        log_util.quiet_warn("app.py:127", _e)
+
     return codes
 
 
@@ -175,6 +184,41 @@ pwatch.set_mkt_temp_provider(_pwatch_mkt_temp)
 
 # 构建戳（ADR-0023）— 每次进程启动变化，用于检测内置浏览器快照陈旧问题
 BUILD_ID = datetime.now().strftime("%H%M%S") + "-" + secrets.token_hex(2).upper()
+STARTED_AT = time.time()
+
+
+# ---- 只读慢接口 TTL 缓存（体检 P1-1） ------------------------------------
+# /api/review 与 /api/daily_review 原为同步直调，内部多次拉 K 线/实时行情，
+# 实测稳定 11~13s 且无缓存无兜底。这里统一加 TTL + stale-on-error：
+# 命中直接返回；生成失败时优先回吐上一次成功值并标注 _warning，前端不白屏。
+_SLOW_CACHE = {}
+_SLOW_LOCK = threading.Lock()
+
+
+def _cached(key, ttl, producer, force=False):
+    now = time.time()
+    with _SLOW_LOCK:
+        hit = _SLOW_CACHE.get(key)
+        if not force and hit and (now - hit["at"]) < ttl:
+            return {**hit["data"], "_cache": {"hit": True,
+                                             "age_s": round(now - hit["at"], 1)}}, 200
+    try:
+        data = producer()
+        if not isinstance(data, dict):
+            data = {"data": data}
+        with _SLOW_LOCK:
+            _SLOW_CACHE[key] = {"at": time.time(), "data": data}
+        return {**data, "_cache": {"hit": False, "age_s": 0}}, 200
+    except Exception as e:
+        print(f"[slow-cache] {key} 生成失败: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        with _SLOW_LOCK:
+            old = (_SLOW_CACHE.get(key) or {}).get("data")
+        if old:
+            return {**old, "_cache": {"hit": True, "stale": True},
+                    "_warning": f"{type(e).__name__}: {e}"}, 200
+        return {"ok": False, "error": f"{type(e).__name__}: {e}"}, 502
 
 
 @app.route("/")
@@ -241,6 +285,9 @@ def _build_zt_board_groups(md_snap, brank_snap):
             "name": s.get("name"), "code": s.get("code"),
             "lianban": lb, "pct": s.get("pct"),
             "amount_yi": s.get("amount_yi"), "first_time": s.get("first_time"),
+            # v2：行业维度下钻表格与题材维度共用列，字段补齐
+            "fund_yi": s.get("fund_yi"), "industry": ind,
+            "turnover": s.get("turnover"),
         })
     # 匹配板块行情指标
     for ind, g in groups.items():
@@ -259,14 +306,130 @@ def _build_zt_board_groups(md_snap, brank_snap):
     return sorted(groups.values(), key=lambda x: (-x["max_lianban"], -x["count"]))
 
 
+def _build_zt_theme_groups(md_snap, brank_snap):
+    """细分题材涨停分布（2026-11-05 v2）：一股可属多个题材，按涨停家数降序。
+
+    kind: concept=东财产业概念 / rule=显式规则 / name=字辈自动发现 / industry=行业兜底
+    行业兜底保证「索引未就绪」时也不丢票；concept 组附带东财概念榜的今日涨跌幅、
+    领涨股、涨跌家数，并用成分股主行业补上腾讯板块榜的净流入与涨速。
+    """
+    zt = md_snap.get("zt_pool_all") or md_snap.get("zt_pool") or []
+    alias = getattr(config, "ZT_THEME_ALIASES", {})
+    ind_meta = {g["industry"]: g for g in _build_zt_board_groups(md_snap, brank_snap)}
+
+    rule_map = theme_board.rule_themes(zt)
+    auto_map = theme_board.auto_name_themes(zt)
+    # 预先算好每只票的题材名，避免 O(n²)
+    tags = {}
+    for s in zt:
+        code = str(s.get("code") or "")
+        names, kinds = [], {}
+        for t in tboard.themes_for(code):
+            # 双保险：旧缓存里可能残留风格/统计型伪概念，聚合层再挡一次
+            if theme_board._is_pseudo(t):
+                continue
+            nm = alias.get(t, t)
+            if nm not in names:
+                names.append(nm)
+                kinds[nm] = "concept"
+        for nm, members in list(rule_map.items()) + list(auto_map.items()):
+            if any(str(m.get("code") or "") == code for m in members) and nm not in names:
+                names.append(nm)
+                kinds[nm] = "rule" if nm in rule_map else "name"
+        if not names:
+            nm = (s.get("industry") or "未分类").strip() or "未分类"
+            names, kinds = [nm], {nm: "industry"}
+        tags[code] = [(nm, kinds[nm]) for nm in names]
+
+    groups = {}
+    for s in zt:
+        code = str(s.get("code") or "")
+        lb = s.get("lianban") or 1
+        item = {
+            "name": s.get("name"), "code": code, "lianban": lb,
+            "pct": s.get("pct"), "amount_yi": s.get("amount_yi"),
+            "fund_yi": s.get("fund_yi"), "first_time": s.get("first_time"),
+            "industry": s.get("industry"), "break_count": s.get("break_count"),
+            "turnover": s.get("turnover"),
+        }
+        for nm, kind in tags.get(code, []):
+            g = groups.get(nm)
+            if g is None:
+                g = groups[nm] = {
+                    "name": nm, "kind": kind, "count": 0, "max_lianban": 0,
+                    "zdf": None, "lead": None, "lead_pct": None,
+                    "up_count": None, "down_count": None,
+                    "netflow_yi": None, "speed": None,
+                    "stocks": [], "_codes": set(), "_ind": {},
+                }
+            if code in g["_codes"]:
+                continue
+            g["_codes"].add(code)
+            g["count"] += 1
+            g["max_lianban"] = max(g["max_lianban"], lb)
+            g["stocks"].append(item)
+            ind = (s.get("industry") or "").strip()
+            if ind:
+                g["_ind"][ind] = g["_ind"].get(ind, 0) + 1
+
+    # 补行情：concept 用东财概念榜元信息（取组内 rank 最小者）；资金/涨速用主行业近似
+    meta_cache = {}
+    for nm, g in groups.items():
+        if g["kind"] == "concept":
+            # 反查该合并题材对应的原始概念名，取排名最靠前的行情
+            cands = [nm] + [k for k, v in alias.items() if v == nm]
+            best = None
+            for c in cands:
+                m = tboard.meta(c)
+                if m and (best is None or m.get("rank", 9999) < best.get("rank", 9999)):
+                    best = m
+            meta_cache[nm] = best or {}
+            if best:
+                g["zdf"] = best.get("zdf")
+                g["lead"] = best.get("lead") or None
+                g["lead_pct"] = best.get("lead_pct")
+                g["up_count"] = best.get("up_count")
+                g["down_count"] = best.get("down_count")
+        # 主行业 → 腾讯板块榜净流入/涨速；行业兜底组直接用行业行情
+        if g["_ind"]:
+            main_ind = max(g["_ind"].items(), key=lambda x: x[1])[0]
+            im = ind_meta.get(main_ind, {})
+            # 题材级没有权威资金流字段，用成分股「主行业」的腾讯板块榜数据近似，
+            # 并在 payload 里标明 proxy_industry，前端 label 会带「近似」二字，不伪装。
+            g["netflow_yi"] = im.get("netflow_yi")
+            g["speed"] = im.get("speed")
+            g["proxy_industry"] = main_ind if g["kind"] != "industry" else None
+            if g["kind"] == "industry":
+                g["zdf"] = im.get("zdf")
+                g["lead"] = im.get("lead")
+                g["up_count"] = None
+                g["down_count"] = None
+        g["stocks"].sort(key=lambda x: (-(x.get("lianban") or 1),
+                                       str(x.get("first_time") or "")))
+        del g["_codes"], g["_ind"]
+    # 用户要求：涨停家数最多的板块排最前；同数再比最高连板、板块涨幅
+    return sorted(groups.values(),
+                  key=lambda x: (-x["count"], -x["max_lianban"], -(x["zdf"] or 0)))
+
+
 @app.route("/api/dashboard")
 def api_dashboard():
     snap = md.snapshot()
     try:
-        snap["zt_board_groups"] = _build_zt_board_groups(snap, brank.snapshot())
+        brank_snap = brank.snapshot()
+        snap["zt_board_groups"] = _build_zt_board_groups(snap, brank_snap)
+        snap["zt_theme_groups"] = _build_zt_theme_groups(snap, brank_snap)
     except Exception as e:
         print(f"[dashboard] 涨停池板块分组失败: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
         snap["zt_board_groups"] = []
+        snap["zt_theme_groups"] = []
+    try:
+        snap["theme_status"] = tboard.snapshot()
+    except Exception as e:
+        print(f"[dashboard] 题材状态读取失败: {type(e).__name__}: {e}")
+        snap["theme_status"] = {"state": "degraded", "err": str(e)[:120]}
     return jsonify(snap)
 
 
@@ -369,7 +532,9 @@ def api_position_watch():
 
 @app.route("/api/review")
 def api_review():
-    return jsonify(review.review())
+    payload, code = _cached("review", 120, lambda: review.review(),
+                            force=request.args.get("refresh") in ("1", "true"))
+    return jsonify(payload), code
 
 
 @app.route("/api/fut_strategy")
@@ -411,8 +576,10 @@ def api_fut_advisor():
 
 @app.route("/api/daily_review")
 def api_daily_review():
-    """当日综合复盘：市场复盘 + 账户操作复盘 + 建议准确率。"""
-    return jsonify(review.daily_review(md, adv))
+    """当日综合复盘：市场复盘 + 账户操作复盘 + 建议准确率（TTL 120s 缓存）。"""
+    payload, code = _cached("daily_review", 120, lambda: review.daily_review(md, adv),
+                            force=request.args.get("refresh") in ("1", "true"))
+    return jsonify(payload), code
 
 
 @app.route("/api/review_deep")
@@ -596,7 +763,7 @@ def api_mind():
 
 
 # ---- 时段报告（market-advisor 每日 4 段 pro_report，只读展示） ----
-REPORTS_DIR = Path(os.environ.get("REPORTS_DIR", "/Users/williamli/Work/reports"))
+REPORTS_DIR = config.REPORTS_DIR
 
 
 @app.route("/api/reports")
@@ -672,8 +839,10 @@ def api_reports_today_status():
                     rg = d.get("review_gate")
                     if isinstance(rg, dict):
                         rep["gate_active"] = bool(rg.get("active"))
-            except Exception:
-                pass
+
+            except Exception as _e:
+                log_util.quiet_warn("app.py:837", _e)
+
         slots[w] = rep
         if rep["ready"] and not rep["dispatched"]:
             no_dispatch.append(w)
@@ -705,7 +874,7 @@ def serve_report(filename):
 BACKTEST_DB = REPORTS_DIR / "backtest_database.json"
 SCHEDULER_PY = Path(os.environ.get(
     "MARKET_SCHEDULER",
-    "/Users/williamli/.workbuddy/skills/market-advisor/scripts/market_scheduler.py"))
+    str(config.MARKET_ADVISOR_SCRIPT)))
 SCHEDULER_PYTHON = os.environ.get("MARKET_SCHEDULER_PYTHON", "/opt/homebrew/anaconda3/bin/python3")
 # 买入费用口径必须与 market_scheduler.record_buys_to_db 一致：0.03% 佣金 + 0.1% 滑点
 BUY_FEE_RATE = 0.0013
@@ -734,8 +903,10 @@ def _pending_paths(kind):
         for f in sorted(REPORTS_DIR.glob(pat), reverse=True):
             if not f.name.endswith(".confirmed.json"):
                 out.append(f)
-    except Exception:
-        pass
+
+    except Exception as _e:
+        log_util.quiet_warn("app.py:899", _e)
+
     return out
 
 
@@ -1041,9 +1212,50 @@ def api_portfolio_post():
 
 @app.route("/api/health")
 def api_health():
-    return jsonify({"ok": True,
-                    "time": data_fetcher.datetime.now().strftime("%H:%M:%S"),
-                    "build_id": BUILD_ID})
+    """体检 P2-4：可读的健康快照 —— 线程存活 / 数据新鲜度 / 错误 / 缓存 / 题材索引。
+    纯内存读取，不做任何网络调用，可作为监控探活端点。"""
+    out = {
+        "ok": True,
+        "time": data_fetcher.datetime.now().strftime("%H:%M:%S"),
+        "build_id": BUILD_ID,
+        "uptime_s": int(time.time() - STARTED_AT),
+    }
+    try:
+        threads = [t.name for t in threading.enumerate() if t.is_alive()]
+        out["threads"] = {"alive_count": len(threads), "names": sorted(set(threads))}
+    except Exception as e:
+        out["threads"] = {"error": f"{type(e).__name__}: {e}"}
+    try:
+        snap = md.snapshot()
+        out["data"] = {
+            "last_update": snap.get("last_update") or {},
+            "zt_count": snap.get("zt_count"),
+            "errors_recent": (snap.get("errors") or [])[-3:],
+        }
+    except Exception as e:
+        out["data"] = {"error": f"{type(e).__name__}: {e}"}
+    try:
+        out["theme"] = tboard.snapshot()
+    except Exception as e:
+        out["theme"] = {"error": f"{type(e).__name__}: {e}"}
+    try:
+        with _SLOW_LOCK:
+            out["slow_cache"] = {
+                k: {"age_s": round(time.time() - v["at"], 1)}
+                for k, v in _SLOW_CACHE.items()
+            }
+    except Exception as e:
+        out["slow_cache"] = {"error": f"{type(e).__name__}: {e}"}
+    try:
+        out["suppressed_exceptions"] = log_util.stats()
+    except Exception as e:
+        out["suppressed_exceptions"] = {"error": f"{type(e).__name__}: {e}"}
+    try:
+        import review_gate
+        out["gate"] = review_gate.health() if hasattr(review_gate, "health") else "n/a"
+    except Exception as e:
+        out["gate"] = {"error": f"{type(e).__name__}: {e}"}
+    return jsonify(out)
 
 
 # ---- 自选股池（DK点操盘线） ----
@@ -1096,6 +1308,7 @@ if __name__ == "__main__":
     lk.start()
     fadv.start()   # M6：期货超短顾问（主力探测+实时/分时+快讯线程）
     brank.start()  # M7：板块榜（腾讯官方涨速 → 短线精灵板块/概念涨速事件）
+    tboard.start()  # M10：细分题材反向索引（缓存命中则跳过，失败降级行业兜底）
     pwatch.start() # M9：持仓实时跟踪（交易时段逐帧评估 50 万模拟盘持仓 → 分层建议+异动）
     app.run(host=config.HOST, port=config.PORT,
             debug=False, threaded=True, use_reloader=False)

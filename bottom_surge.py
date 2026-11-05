@@ -43,6 +43,7 @@
 """
 
 import argparse
+import log_util
 import json
 import os
 import sys
@@ -292,8 +293,10 @@ def daily_k(code, n=K_N, use_cache=True):
             c = json.loads(cache_f.read_text(encoding="utf-8"))
             if time.time() - c.get("ts", 0) < 300:       # 5 分钟缓存
                 return c["rows"]
-        except Exception:
-            pass
+
+        except Exception as _e:
+            log_util.quiet_warn("bottom_surge.py:296", _e)
+
     rows = None
     last_err = None
     for fn in (_kline_sina, _kline_ifzq):
@@ -309,8 +312,10 @@ def daily_k(code, n=K_N, use_cache=True):
     try:
         KLINE_CACHE_DIR.mkdir(parents=True, exist_ok=True)
         cache_f.write_text(json.dumps({"ts": time.time(), "rows": rows}), encoding="utf-8")
-    except Exception:
-        pass
+
+    except Exception as _e:
+        log_util.quiet_warn("bottom_surge.py:313", _e)
+
     return rows
 
 

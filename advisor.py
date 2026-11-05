@@ -16,6 +16,7 @@
 卖出/止损阈值由策略内置（专家口径），不给用户暴露配置。
 """
 import json
+import log_util
 import re
 import threading
 import time as _time
@@ -618,8 +619,10 @@ class Advisor:
                 old = _json.load(open(f, encoding="utf-8"))
                 if old.get("date") == today_str:
                     return  # 今天已归档过，避免覆盖
-            except Exception:
-                pass
+
+            except Exception as _e:
+                log_util.quiet_warn("advisor.py:622", _e)
+
         _json.dump({
             "date": today_str,
             "archived_at": datetime.now().strftime("%H:%M:%S"),
@@ -660,8 +663,10 @@ class Advisor:
                 # 后台线程永不因单次异常退出
                 try:
                     traceback.print_exc()
-                except Exception:
-                    pass
+
+                except Exception as _e:
+                    log_util.quiet_warn("advisor.py:664", _e)
+
             self._auto_stop.wait(interval)
 
     def stop(self):

@@ -14,13 +14,14 @@
 用法：
   /opt/homebrew/anaconda3/bin/python3 apply_manual_sell.py --symbol 002929.SZ --shares 500 --price 53.50
 """
+import config
 import argparse
 import json
 import os
 import shutil
 from datetime import datetime
 
-DB = "/Users/williamli/Work/reports/backtest_database.json"
+DB = str(config.REPORTS_DIR / "backtest_database.json")
 
 
 def _fee(shares, price, side):

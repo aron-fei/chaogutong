@@ -19,13 +19,14 @@
 
 安全：写盘前自动备份；--dry-run 只预览。
 """
+import config
 import argparse
 import json
 import os
 import shutil
 from datetime import datetime
 
-DB = "/Users/williamli/Work/reports/backtest_database.json"
+DB = str(config.REPORTS_DIR / "backtest_database.json")
 SYMBOL = "002929.SZ"
 NAME = "润建股份"
 

@@ -22,6 +22,7 @@
 成本基准：建议价(suggest) 与 前收盘(prevclose) 两种都算。
 费用：买入 佣金 0.025%(min 5 元)+过户 0.001%；卖出 佣金 0.025%(min 5)+印花 0.05%+过户 0.001%。
 """
+import config
 from __future__ import annotations
 
 import argparse
@@ -32,7 +33,7 @@ import sys
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-REPORTS_DIR = Path(os.environ.get("REPORTS_DIR", "/Users/williamli/Work/reports"))
+REPORTS_DIR = config.REPORTS_DIR
 EXTRACT_1040 = "1040"
 
 

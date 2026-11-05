@@ -14,6 +14,7 @@
 数据源：腾讯 qt.gtimg.cn（与全A同一数据源，规避东财 WAF）。
 """
 import json
+import log_util
 import time
 from pathlib import Path
 from datetime import datetime
@@ -134,8 +135,10 @@ def scan(md):
         d["names"].append(s.get("name", ""))
         try:
             d["amount_yi"] = round(d["amount_yi"] + float(s.get("amount_yi", 0) or 0), 1)
-        except (TypeError, ValueError):
-            pass
+
+        except (TypeError, ValueError) as _e:
+            log_util.quiet_warn("theme_arb.py:138", _e)
+
     industry_heat = sorted(ind_map.values(),
                            key=lambda x: (-x["count"], -x["max_lb"], x["name"]))
     for x in industry_heat:

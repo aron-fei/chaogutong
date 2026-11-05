@@ -14,6 +14,7 @@ DK 算法（参考东方财富操盘线·黄蓝线规则）：
 K 线源：akshare.stock_zh_a_hist（按需缓存到 data/watchlist_cache/<code>.json）
 """
 import json
+import log_util
 import math
 import threading
 import time
@@ -165,8 +166,10 @@ def _fetch_history(code):
             cached = json.loads(cache.read_text(encoding="utf-8"))
             if time.time() - cached.get("ts", 0) < CACHE_TTL:
                 return cached["bars"]
-        except Exception:
-            pass
+
+        except Exception as _e:
+            log_util.quiet_warn("watchlist.py:169", _e)
+
     # 主源：akshare stock_zh_a_daily（东方财富数据源）
     bars = _fetch_history_akshare(code)
     if not bars:
@@ -177,8 +180,10 @@ def _fetch_history(code):
             cache.write_text(json.dumps(
                 {"ts": time.time(), "bars": bars},
                 ensure_ascii=False), encoding="utf-8")
-        except Exception:
-            pass
+
+        except Exception as _e:
+            log_util.quiet_warn("watchlist.py:181", _e)
+
     return bars
 
 
