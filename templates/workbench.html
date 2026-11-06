@@ -520,6 +520,23 @@
   .kpl-emo-note { padding: 0 14px 10px; font-size: 11px; color: #8c959f; line-height: 1.55; }
   .kpl-emo-note .warn { color: #9a6700; }
 
+  /* ①b GJD 国家队 ETF：结论条（一句话判定，比一堆数字更重要） */
+  .gjd-verdict { margin: 0 14px 6px; padding: 9px 12px; border-radius: 8px; font-size: 12.5px;
+                 line-height: 1.65; border: 1px solid #e2e6ea; background: #f8f9fa; color: #3d4148; }
+  .gjd-verdict b { font-weight: 700; }
+  .gjd-verdict.buy   { border-color: #f5c2c7; background: #fff5f5; color: #82071e; }
+  .gjd-verdict.sell  { border-color: #b6e3c2; background: #f2fbf5; color: #0f5323; }
+  .gjd-verdict.warn  { border-color: #f0cf9a; background: #fff8ec; color: #7d4e00; }
+  .gjd-verdict.calm  { border-color: #d8dee4; background: #f6f8fa; color: #57606a; }
+  .gjd-verdict .vd-tag { font: 700 10px/1.6 "SF Mono", Menlo, monospace; padding: 1px 6px;
+                         border-radius: 4px; margin-right: 7px; background: rgba(0,0,0,.06); }
+  .gjd-note { padding: 0 14px 8px; font-size: 10.5px; color: #8c959f; line-height: 1.6; }
+  .gjd-note .warn { color: #9a6700; }
+  .gjd-cnt { font-size: 10.5px; font-weight: 400; color: #8c959f; margin-left: 4px; }
+  .gjd-tbl td.gjd-x { font-weight: 700; }
+  .gjd-tbl td.gjd-x.hi { color: #cf222e; }
+  .gjd-tbl td.gjd-x.lo { color: #1a7f37; }
+
   /* ② 板块强度榜：密集可排序表格（开盘啦「板块 · 历史统计」的排版方式） */
   .kpl-loc { font-size: 9.5px; font-weight: 600; color: #9a6700; background: #fff8ec;
              border: 1px solid #f0cf9a; border-radius: 4px; padding: 1px 6px; margin-left: 7px;
@@ -1103,7 +1120,7 @@
         <button data-mk="us" data-page-node-id="TzAfvZneL9uoMrXYkO3MFa">美股隔夜</button>
         <button data-mk="fut" data-page-node-id="gzWHkIUgg7DOCfrEhCYs3b">国内期货</button>
       </div>
-      <div class="wb-mk-tip" id="wb-mk-tip" data-page-node-id="tarViAohACJir3uhkq70g0">A股 6 组 · 16 视图 · 多市场行情参考</div>
+      <div class="wb-mk-tip" id="wb-mk-tip" data-page-node-id="tarViAohACJir3uhkq70g0">A股 6 组 · 17 视图 · 多市场行情参考</div>
       <div class="wb-nav-list" id="wb-nav-ash" data-page-node-id="3yCBmJ8jzvc7syUU8ltj05">
         <!-- 2026-11-05 v2：一级 tab 点击展开，二级 tab 菜单缩进在下方（树形层级） -->
         <div class="wb-group">
@@ -1111,7 +1128,7 @@
           <div class="wb-submenu" data-sub="decision"></div>
         </div>
         <div class="wb-group">
-          <div class="wb-group-item" data-group="market"><span class="g-label">📊 市场全景</span><span class="gcount">4</span><span class="g-arrow">▾</span></div>
+          <div class="wb-group-item" data-group="market"><span class="g-label">📊 市场全景</span><span class="gcount">5</span><span class="g-arrow">▾</span></div>
           <div class="wb-submenu" data-sub="market" hidden></div>
         </div>
         <div class="wb-group">
@@ -1137,6 +1154,7 @@
         <div class="wb-nav-item" data-section="linkage" data-page-node-id="lkNav01">🌐 联动观察<span class="idtag bg" title="未接入推票：美股/港股/期货映射，目前仅作人工盘前参考">背景</span></div>
         <div class="wb-nav-item" data-section="portfolio" data-page-node-id="qOad3w7u7hdEFOZpMfHLAh">💼 持仓管理<span class="idtag risk" title="真实持仓只读参照；策略用回测账户，真实盘不扰动选股">风控</span></div>
         <div class="wb-nav-item" data-section="market" data-page-node-id="nKktBIJgFA5ebmdRff90bD">📊 大盘速览<span class="idtag bg" title="决策背景：调度器另取选股宝自算温度，不读本 tab">背景</span></div>
+        <div class="wb-nav-item" data-section="gjd" data-page-node-id="gjdNav01">🏛️ 国家队ETF <span class="badge zero" id="gjd-badge" title="core 池放量倍数">--</span><span class="idtag gate" title="约束源：GJD 放量买入 → 放宽仓位；放量出货 → 收紧仓位（写入推票闸门）">约束</span></div>
         <div class="wb-nav-item" data-section="sector" data-page-node-id="WJZuZwYWUn90C9KUm72g73">🔥 板块涨幅<span class="idtag bg" title="决策背景：资金流信号由调度器独立取腾讯榜">背景</span></div>
         <div class="wb-nav-item" data-section="screen" data-page-node-id="vzZMFUpYd6aALPMVSSMQ0M">⚡ 个股异动<span class="idtag bg" title="决策背景：人工观察用">背景</span></div>
         <div class="wb-nav-item" data-section="sprite" data-page-node-id="spNav01">📡 短线精灵 <span class="badge zero" id="sprite-badge" data-page-node-id="spBadge01">0</span><span class="idtag bg" title="未接入推票：异动事件流，天然偏 人看">背景</span></div>
@@ -1297,6 +1315,73 @@
               <span class="b-flat" id="b-flat" data-page-node-id="LSMuzUFwV91kPiziT1n6Gg">平 -</span>
             </div>
             <div class="breadth-right" id="b-sentiment" data-page-node-id="NKBy36jclM1Y2BInFL7Rfa">情绪: --</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== 区域 3.5：国家队 ETF 资金面（GJD，2026-11-06） =====
+           数据自建：基准=第三方每日快照(20日均额+日内成交额分布)，实时=腾讯行情。
+           核心不是「放量」本身，而是「放量是否伴随主动净买入」——放量+净卖出 = 出货。 -->
+      <section class="wb-section" data-section="gjd" hidden data-page-node-id="gjdSec01">
+        <div class="panel" data-page-node-id="gjdPanel01">
+          <div class="panel-hd" data-page-node-id="gjdHd01">
+            <h3 data-page-node-id="gjdH3">🏛️ 国家队 ETF 资金面</h3>
+            <div class="ztbg-tools">
+              <span class="kpl-loc" title="放量与净买入均为本地口径，与第三方跟踪器同源同算法">本地口径</span>
+              <button class="btn" id="gjd-refresh" title="立即重取腾讯行情（默认 60s 自动刷新）">刷新</button>
+            </div>
+          </div>
+          <div class="kpl-emo" id="gjd-emo">
+            <div class="kpl-emo-cell"><b id="gjd-ratio">-</b><span>core 放量倍数</span></div>
+            <div class="kpl-emo-cell"><b id="gjd-net">-</b><span>主动净买入(亿)</span></div>
+            <div class="kpl-emo-cell"><b id="gjd-pct">-</b><span>池内加权涨跌</span></div>
+            <div class="kpl-emo-cell"><b id="gjd-amt">-</b><span>今日成交(亿)</span></div>
+            <div class="kpl-emo-cell"><b id="gjd-base">-</b><span>同时点基准(亿)</span></div>
+            <div class="kpl-emo-cell"><b id="gjd-level">-</b><span>资金梯队</span></div>
+          </div>
+          <div class="gjd-verdict" id="gjd-verdict">加载中…</div>
+          <div class="gjd-note" id="gjd-note"></div>
+
+          <div class="panel-hd sep">
+            <h3>🏦 core 主力池 <span class="gjd-cnt" id="gjd-core-cnt"></span></h3>
+            <span class="refresh-note" id="gjd-asof"></span>
+          </div>
+          <div class="kpl-wrap">
+            <table class="kpl-tbl" id="gjd-core-tbl">
+              <thead><tr>
+                <th style="text-align:left">ETF</th>
+                <th style="text-align:left">跟踪指数</th>
+                <th title="汇金/国家队历史披露持仓市值（亿元），来自第三方快照，非实时">汇金亿</th>
+                <th title="今日累计成交额（亿元）">成交亿</th>
+                <th title="同时点基准 = 20日均额 × 该 ETF 日内成交额分布曲线(当前时点)">基准亿</th>
+                <th title="今日成交额 ÷ 同时点基准，>1 为放量">倍数</th>
+                <th title="(外盘−内盘)×100×成交均价，单位亿元，正=主动买盘占优">净买亿</th>
+                <th title="按规模加权">涨跌%</th>
+                <th title="当前时点的日内成交额进度">进度</th>
+              </tr></thead>
+              <tbody id="gjd-core-body"><tr><td colspan="9" class="empty-tip" style="padding:12px">加载中…</td></tr></tbody>
+            </table>
+          </div>
+
+          <div class="panel-hd sep">
+            <h3>👀 watch 观察池 <span class="gjd-cnt" id="gjd-watch-cnt"></span></h3>
+            <span class="refresh-note">不进 core 倍数，单列参考</span>
+          </div>
+          <div class="kpl-wrap">
+            <table class="kpl-tbl">
+              <thead><tr>
+                <th style="text-align:left">ETF</th><th style="text-align:left">跟踪指数</th>
+                <th>成交亿</th><th>基准亿</th><th>倍数</th><th>净买亿</th><th>涨跌%</th>
+              </tr></thead>
+              <tbody id="gjd-watch-body"><tr><td colspan="7" class="empty-tip" style="padding:12px">加载中…</td></tr></tbody>
+            </table>
+          </div>
+
+          <div class="hint" id="gjd-hint">
+            📌 <b>怎么用</b>：GJD 放量买入 = 有长钱托底，推票闸门<b>放宽</b>；放量出货 = 有人在高位派发，闸门<b>收紧</b>；
+            缩量 = 国家队缺席，<b>按原情绪档</b>执行不加不减。<br>
+            口径：<b>倍数</b> = 今日成交额 ÷ (20日均额 × 该 ETF 当日同时点的成交额分布)；<b>主动净买</b> = (外盘−内盘)×100×成交均价。
+            两者需一起看——<b>只看量会把「放量出货」误判成「放量买入」</b>。
           </div>
         </div>
       </section>
@@ -3337,6 +3422,23 @@ async function pollDashboard() {
     _lastFiveMinAt = d.five_min_at || _lastFiveMinAt;
     if (curTab === "five_min") renderFiveMin();
     renderBreadth(d);
+    // GJD 角标随大盘轮询同步（无需访问该 tab 也能看到国家队状态）
+    if (d.gjd) {
+      const g = d.gjd, bd = $("gjd-badge");
+      if (bd) {
+        const rt = (g.ratio === null || g.ratio === undefined) ? null : Number(g.ratio);
+        bd.textContent = rt === null ? "--" : rt.toFixed(2) + "×";
+        const tightened = g.level_code === "distribution" || g.level_code === "shrink";
+        const loosened = g.level_code === "strong_buy" || g.level_code === "buy";
+        bd.className = "badge" + (tightened ? "" : (loosened ? " up" : " zero"));
+        if (tightened) bd.style.cssText = "background:#ffebe9;color:#cf222e";
+        else if (loosened) bd.style.cssText = "background:#ffebe9;color:#cf222e";
+        else bd.style.cssText = "";
+        bd.title = "国家队 core 池 " + (rt === null ? "--" : rt.toFixed(2) + "×")
+          + " · " + (g.level || "--")
+          + (g.net_buy_yi === null || g.net_buy_yi === undefined ? "" : " · 净买 " + g.net_buy_yi + " 亿");
+      }
+    }
     _lastDataTime = new Date().toLocaleTimeString('zh-CN', { hour12: false });
     updateCrumbMeta();
   } catch (e) {
@@ -4981,13 +5083,166 @@ function pwToast(e) {
 // 交易时段内每 5s 拉增量（引擎 tick 15s，事件即时弹窗）；隐藏且非交易时段自动静默
 setInterval(() => loadPositionWatch(), 5000);
 
+// ================= 国家队 ETF 资金面（GJD，2026-11-06） =================
+// 判定逻辑全部在 Python（gjd_etf.py 的 grade / gate_effect），前端只做展示，
+// 避免「页面说放宽、调度器却收紧」这种两边口径不一致的经典坑。
+const _GJD_RED = '#cf222e', _GJD_GREEN = '#1a7f37', _GJD_DIM = '#8c959f';
+const _GJD_DIR_CLS = { loosen: 'buy', hold: 'calm', tighten: 'sell' };
+let _gjdData = null, _gjdNext = null;
+
+function _gjdNum(v, d) {
+  if (v === null || v === undefined || isNaN(Number(v))) return '<span style="color:' + _GJD_DIM + '">--</span>';
+  return Number(v).toFixed(d === undefined ? 2 : d);
+}
+function _gjdSigned(v, d, unit) {
+  if (v === null || v === undefined || isNaN(Number(v))) return '<span style="color:' + _GJD_DIM + '">--</span>';
+  const n = Number(v), s = (d === undefined ? 2 : d);
+  const c = n > 0 ? _GJD_RED : (n < 0 ? _GJD_GREEN : '#57606a');
+  return '<span style="color:' + c + ';font-weight:700">' + (n > 0 ? '+' : '') + n.toFixed(s) + (unit || '') + '</span>';
+}
+function _gjdRow(r, withHuijin) {
+  const x = (r.ratio === null || r.ratio === undefined) ? null : Number(r.ratio);
+  const xc = x === null ? _GJD_DIM : (x >= 1.5 ? _GJD_RED : (x < 1.0 ? _GJD_GREEN : '#3d4148'));
+  const net = r.net_buy_yi;
+  const pct = r.pct;
+  return '<tr>'
+    + '<td style="text-align:left"><b>' + esc(r.name || r.code) + '</b>'
+      + ' <span style="color:' + _GJD_DIM + ';font-family:monospace">' + esc(r.code) + '</span></td>'
+    + '<td style="text-align:left;color:#57606a">' + esc(r.index || '--') + '</td>'
+    + (withHuijin ? '<td>' + _gjdNum(r.huijin_yi, 0) + '</td>' : '')
+    + '<td>' + _gjdNum(r.amount_yi) + '</td>'
+    + '<td style="color:' + _GJD_DIM + '">' + _gjdNum(r.base_yi) + '</td>'
+    + '<td style="font-weight:700;color:' + xc + '">' + (x === null ? '--' : x.toFixed(2) + '×') + '</td>'
+    + '<td>' + _gjdSigned(net, 2, '') + '</td>'
+    + '<td>' + _gjdSigned(pct, 2, '%') + '</td>'
+    + (withHuijin ? '<td style="color:' + _GJD_DIM + '">'
+        + (r.progress === null || r.progress === undefined ? '--' : (Number(r.progress) * 100).toFixed(0) + '%') + '</td>' : '')
+    + '</tr>';
+}
+
+function gjdRender(d) {
+  _gjdData = d;
+  const c = (d && d.core) || {}, w = (d && d.watch) || {};
+  const eff = (d && d.effect) || { pos_delta: 0, pick_delta: 0, dir: 'hold', why: '' };
+  const ok = d && d.ok;
+  const ratio = c.ratio, net = c.net_buy_yi;
+
+  // ① 顶部计数条
+  $('gjd-ratio').textContent = (ratio === null || ratio === undefined) ? '--' : Number(ratio).toFixed(2) + '×';
+  $('gjd-net').innerHTML = _gjdSigned(net, 2, '');
+  $('gjd-pct').innerHTML = _gjdSigned(c.pct, 2, '%');
+  $('gjd-amt').textContent = (c.amount_yi === undefined || c.amount_yi === null) ? '--' : Number(c.amount_yi).toFixed(1);
+  $('gjd-base').textContent = (c.base_yi === undefined || c.base_yi === null) ? '--' : Number(c.base_yi).toFixed(1);
+  $('gjd-level').textContent = c.level || '--';
+  // 计数条着色：净买入红/绿，倍数>1.5 红（放量）
+  const netEl = $('gjd-net').parentNode;
+  netEl.className = 'kpl-emo-cell' + (net > 0 ? ' up' : (net < 0 ? ' down' : ''));
+  const rEl = $('gjd-ratio').parentNode;
+  rEl.className = 'kpl-emo-cell' + (ratio >= 1.5 ? ' up' : (ratio !== null && ratio < 1.0 ? ' down' : ''));
+  const lvEl = $('gjd-level').parentNode;
+  lvEl.className = 'kpl-emo-cell' + (eff.dir === 'loosen' ? ' up' : (eff.dir === 'tighten' ? ' down' : ''));
+  // 导航角标
+  const bd = $('gjd-badge');
+  if (bd) {
+    bd.textContent = (ratio === null || ratio === undefined) ? '--' : Number(ratio).toFixed(2) + '×';
+    bd.className = 'badge' + (eff.dir === 'tighten' ? '' : (eff.dir === 'loosen' ? ' up' : ' zero'));
+    bd.title = 'core 池放量倍数 ' + (ratio === null ? '--' : ratio) + ' · ' + (c.level || '--');
+  }
+
+  // ② 结论条：先说「今天国家队在干什么」，再说「所以推票怎么改」
+  const vd = $('gjd-verdict');
+  const _lv = esc(c.level || '--');
+  const _rt = (ratio === null || ratio === undefined) ? '--' : Number(ratio).toFixed(2);
+  const _nb = (net === null || net === undefined) ? '无数据' : (net > 0 ? '+' : '') + Number(net).toFixed(2) + ' 亿';
+  const _adj = '总仓 <b>' + (eff.pos_delta > 0 ? '+' : '') + eff.pos_delta + 'pp</b>'
+    + (eff.pick_delta ? '、只数 <b>' + (eff.pick_delta > 0 ? '+' : '') + eff.pick_delta + '</b>' : '');
+  if (!ok) {
+    vd.className = 'gjd-verdict calm';
+    vd.innerHTML = '<span class="vd-tag">不可用</span>GJD 取数失败（' + esc(d.reason || '未知原因')
+      + '），闸门<b>不加不减</b>，按原情绪档执行。';
+  } else if (d.session === 'preopen') {
+    vd.className = 'gjd-verdict calm';
+    vd.innerHTML = '<span class="vd-tag">盘前</span>未开盘，成交额尚未形成，放量倍数无意义。'
+      + '闸门<b>不加不减</b>，9:35 后再看。';
+  } else if (eff.dir === 'tighten') {
+    vd.className = 'gjd-verdict sell';
+    vd.innerHTML = '<span class="vd-tag">收紧</span>梯队 <b>' + _lv + '</b>'
+      + ' · 成交额是同时点基准的 <b>' + _rt + ' 倍</b> · 主动净买入 <b>' + _nb + '</b> → '
+      + esc(eff.why) + '，闸门改为 ' + _adj + '。';
+  } else if (eff.dir === 'loosen') {
+    vd.className = 'gjd-verdict buy';
+    vd.innerHTML = '<span class="vd-tag">放宽</span>梯队 <b>' + _lv + '</b>'
+      + ' · 成交额是同时点基准的 <b>' + _rt + ' 倍</b> · 主动净买入 <b>' + _nb + '</b> → '
+      + esc(eff.why) + '，闸门改为 ' + _adj + '。';
+  } else {
+    vd.className = 'gjd-verdict calm';
+    vd.innerHTML = '<span class="vd-tag">不动</span>梯队 <b>' + _lv + '</b>'
+      + ' · 成交额是同时点基准的 <b>' + _rt + ' 倍</b> · 主动净买入 <b>' + _nb + '</b> → '
+      + esc(eff.why) + '，闸门<b>不加不减</b>，按情绪档执行。';
+  }
+
+  // ③ 口径与降级标注（缺数据就如实说，不装作有）
+  const meta = (d && d.base) || {};
+  const notes = [];
+  if (meta.trade_date) notes.push('基准交易日 <b>' + esc(meta.trade_date) + '</b>（20 日均额截止日，非今日）');
+  if (meta.stale) notes.push('<span class="warn">基准已过期（本地缓存超 7 天，倍数精度下降）</span>');
+  if (c.linear_fallback > 0) {
+    notes.push('<span class="warn">' + c.linear_fallback + ' 只缺日内分布曲线，按 240 分钟线性摊（精度下降）</span>');
+  }
+  if (c.net_cover !== undefined && c.count !== undefined && c.net_cover < c.count) {
+    notes.push('<span class="warn">' + (c.count - c.net_cover) + ' 只缺内外盘，主动净买入未计入这些票</span>');
+  }
+  notes.push('更新 <b>' + esc(d.asof || '--') + '</b> · 会话 <b>' + esc(d.session || '--') + '</b>');
+  $('gjd-note').innerHTML = notes.join(' · ');
+  $('gjd-hint').innerHTML = $('gjd-hint').innerHTML;   // 静态文案保持不变
+
+  // ④ 两张表
+  const cb = $('gjd-core-body');
+  const items = (c.items || []).slice();
+  cb.innerHTML = items.length
+    ? items.map(r => _gjdRow(r, true)).join('')
+    : '<tr><td colspan="9" class="empty-tip" style="padding:12px">无数据</td></tr>';
+  const wb = $('gjd-watch-body');
+  const wit = (w.items || []).slice();
+  wb.innerHTML = wit.length
+    ? wit.map(r => _gjdRow(r, false)).join('')
+    : '<tr><td colspan="7" class="empty-tip" style="padding:12px">无数据</td></tr>';
+  $('gjd-core-cnt').textContent = '(' + (c.count || 0) + ' 只)';
+  $('gjd-watch-cnt').textContent = '(' + (w.count || 0) + ' 只)';
+  $('gjd-asof').textContent = (c.amount_yi !== undefined && c.amount_yi !== null)
+    ? '合计 ' + Number(c.amount_yi).toFixed(1) + ' 亿 / 基准 ' + Number(c.base_yi).toFixed(1) + ' 亿' : '';
+}
+
+function loadGJD(force) {
+  const url = '/api/gjd' + (force ? '?refresh=1' : '');
+  fetch(url, { cache: 'no-store' })
+    .then(r => r.json())
+    .then(d => { gjdRender(d); })
+    .catch(e => {
+      const vd = $('gjd-verdict');
+      if (vd) { vd.className = 'gjd-verdict calm'; vd.textContent = 'GJD 加载失败: ' + e; }
+    })
+    .finally(() => {
+      // 只在本 tab 可见时续期轮询，别白白打接口
+      if (_gjdNext) clearTimeout(_gjdNext);
+      _gjdNext = setTimeout(() => {
+        if (document.querySelector('.wb-section[data-section="gjd"]:not([hidden])')) loadGJD(false);
+      }, 60000);
+    });
+}
+// 直接绑定（脚本在 body 末尾，按钮已存在，不必等 DOMContentLoaded，否则会漏绑）
+(function () {
+  const btn = $('gjd-refresh');
+  if (btn) btn.addEventListener('click', () => loadGJD(true));
+})();
+
 // ================= Tab 树形导航（2026-11-05 v2） =================
 // 一级 6 组可展开/折叠 → 下方缩进显示二级视图菜单；内容区顶部只留面包屑。
 // 关键：二级项「移动」原 DOM 节点而非克隆 —— badge 的 id 与已绑定事件全部保留，
 // 所有 load*/render* 逻辑零改动，多市场(hk/us/fut)切换逻辑也保持原样。
 const WB_GROUPS = [
   { id: 'decision', label: '🎯 决策产出',   items: ['advisor', 'reports'] },
-  { id: 'market',   label: '📊 市场全景',   items: ['market', 'sector', 'zt', 'linkage'] },
+  { id: 'market',   label: '📊 市场全景',   items: ['market', 'gjd', 'sector', 'zt', 'linkage'] },
   { id: 'signal',   label: '⚡ 异动信号',   items: ['sprite', 'screen', 'dragon'] },
   { id: 'pool',     label: '🎣 候选池',     items: ['bottom', 'theme', 'watchlist'] },
   { id: 'position', label: '💼 持仓',       items: ['portfolio', 'pwatch'] },
@@ -5074,6 +5329,7 @@ function switchSection(name) {
   else if (name === 'theme') loadThemeArb(true);
   else if (name === 'sprite') { _spUnread = 0; spBadge(); loadSprite(true); }
   else if (name === 'zt') pollDashboard();
+  else if (name === 'gjd') loadGJD(false);
   else if (name === 'review') { loadReviewMode(); loadDailyReview(); loadGateHealth(); loadSuggestions(); }
   else if (name === 'mind') loadMind();
   else if (name === 'watchlist') loadWatchlist();
@@ -5216,7 +5472,7 @@ function setMarket(mk) {
     if (mood) mood.style.display = '';
     $('wb-subtabs').hidden = false;
     renderNavTree(_ashSection);
-    $('wb-mk-tip').textContent = 'A股 6 组 · 16 视图 · 多市场行情参考';
+    $('wb-mk-tip').textContent = 'A股 6 组 · 17 视图 · 多市场行情参考';
   } else {
     ashNav.hidden = true; mkNav.hidden = false; if (mood) mood.style.display = 'none';
     $('wb-subtabs').hidden = true;

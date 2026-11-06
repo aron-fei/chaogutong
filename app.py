@@ -32,6 +32,7 @@ import dispatch_diag  # 2026-11-05 体检剩余项：零派单根因诊断（只
 import bottom_radar  # M8 底部放量雷达（ADR-0033，缓存+后台刷新，扫描整轮 5~6s）
 import position_watch  # M9 持仓实时跟踪（ADR-0034，交易时段逐帧评估持仓 → 分层操作建议+异动）
 import zt_board_stat  # 2026-11-06 开盘啦借鉴：板块强度榜 / 涨停晋级率 / 亏钱效应（纯现算）
+import gjd_etf  # 2026-11-06 GJD 宽基 ETF 资金面（国家队是否放量买入 → 推票闸门修正项）
 from datetime import datetime, timedelta
 import json
 import math
@@ -360,6 +361,10 @@ def _pwatch_mkt_temp():
 
 pwatch.set_mkt_temp_provider(_pwatch_mkt_temp)
 
+# GJD 宽基 ETF 资金面（2026-11-06）：独立线程 60s（非交易时段 5 分钟）刷新，
+# 与大盘行情相互隔离——腾讯 ETF 取数失败只让本卡片降级，不影响其他 tab。
+gjd = gjd_etf.instance()
+
 # 构建戳（ADR-0023）— 每次进程启动变化，用于检测内置浏览器快照陈旧问题
 BUILD_ID = datetime.now().strftime("%H%M%S") + "-" + secrets.token_hex(2).upper()
 STARTED_AT = time.time()
@@ -650,6 +655,48 @@ def api_dashboard():
     except Exception as e:
         print(f"[dashboard] 题材状态读取失败: {type(e).__name__}: {e}")
         snap["theme_status"] = {"state": "degraded", "err": str(e)[:120]}
+    # GJD 资金面摘要：只带 core 池关键字段，明细走 /api/gjd 独立接口
+    try:
+        g = gjd.snapshot()
+        c = g.get("core") or {}
+        snap["gjd"] = {
+            "ok": bool(g.get("ok")),
+            "reason": g.get("reason") or "",
+            "asof": g.get("asof"),
+            "session": g.get("session"),
+            "ratio": c.get("ratio"),
+            "net_buy_yi": c.get("net_buy_yi"),
+            "amount_yi": c.get("amount_yi"),
+            "pct": c.get("pct"),
+            "level": c.get("level"),
+            "level_code": c.get("level_code"),
+            "score": c.get("score"),
+            "count": c.get("count"),
+            "net_cover": c.get("net_cover"),
+            "base_stale": bool((g.get("base") or {}).get("stale")),
+            "base_trade_date": (g.get("base") or {}).get("trade_date") or "",
+        }
+    except Exception as e:
+        print(f"[dashboard] GJD 摘要读取失败: {type(e).__name__}: {e}")
+        snap["gjd"] = {"ok": False, "reason": f"{type(e).__name__}: {e}"}
+    return jsonify(snap)
+
+
+@app.route("/api/gjd")
+def api_gjd():
+    """GJD（国家队/汇金系）宽基 ETF 资金面：放量倍数 + 主动净买入 + 梯队。
+
+    数据来源自建（不依赖第三方站点可用性）：
+      · 基准：第三方每日快照（20 日均额 + 日内成交额分布曲线），本地缓存
+      · 实时：腾讯行情（与全 A 同源）
+    指标口径见 gjd_etf.py 顶部注释；「放量但净卖出」判为出货，这是相对第三方的额外区分。
+    """
+    snap = gjd.snapshot()
+    if request.args.get("refresh") == "1":
+        try:
+            snap = gjd.refresh()
+        except Exception as e:
+            print(f"[gjd] 手动刷新失败: {type(e).__name__}: {e}")
     return jsonify(snap)
 
 
@@ -1603,5 +1650,6 @@ if __name__ == "__main__":
     start_strategy()  # 首板雷达 v2：趋势题材 / 昨日涨停基线 / 快讯催化（后台低频）
     bottom_radar.instance().warm()  # 体检剩余项：预热慢接口，首个请求不再阻塞 13s
     pwatch.start() # M9：持仓实时跟踪（交易时段逐帧评估 50 万模拟盘持仓 → 分层建议+异动）
+    gjd.start()    # 2026-11-06：GJD 宽基 ETF 资金面（国家队是否放量买入）
     app.run(host=config.HOST, port=config.PORT,
             debug=False, threaded=True, use_reloader=False)
