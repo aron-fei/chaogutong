@@ -6079,6 +6079,14 @@ def generate_report(stage):
             if _PENDING_FILE_NOTES:
                 _t1040 += "（请到工作台操作确认台确认）"
             open_report_in_textedit(filename, _t1040)
+        elif stage == "盘后复盘":
+            # 盘后复盘：弹窗只读报告 + 异步推送到微信（与买入时段同源开关 WECHAT_PUSH_ENABLED）
+            open_report_in_textedit(filename, f"盘后复盘 {today_str}")
+            _t = threading.Thread(target=send_wechat_pushplus,
+                                  args=("盘后复盘 - " + today_str, full_report),
+                                  kwargs={"template": "txt"}, daemon=False)
+            _t.start()
+            _WECHAT_THREADS.append(_t)
     except Exception as e:
         # 曾经这里是 `pass`，弹窗环节任何异常都被静默吞掉，
         # 表现为"任务跑完、报告落盘、但屏幕上什么都没有且日志无一行报错"。

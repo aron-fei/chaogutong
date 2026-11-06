@@ -32,11 +32,13 @@ REPORT_DIR="${REPORTS_DIR:-$HOME/Work/reports}"
 # 导出给 market_scheduler.py 使用（其默认路径为本机路径，新机器必须覆盖）
 export REPORTS_DIR="$REPORT_DIR"
 export MARKET_MONITOR_DIR="${MARKET_MONITOR_DIR:-$HOME/Work/market-monitor}"
+# 微信推送总开关（默认开；设 0 关闭）。token 读同目录 pushplus_token.txt 或环境变量 PUSHPLUS_TOKEN
+export WECHAT_PUSH_ENABLED="${WECHAT_PUSH_ENABLED:-1}"
 RUNNER_LOG="$REPORT_DIR/slot_runner.log"
 STATUS_JSON="$REPORT_DIR/slot_status.json"
 # 2026-10-21 新增 10:40：10:40 是唯一卖出决策点，此前无 launchd 兜底（只靠 WorkBuddy 应用内自动化）
 # → 10-15 报告缺失、10-21 延迟 9 分钟。补齐后与其它四段同构，消除卖出通道单点依赖。
-VALID_STAGES=(09:25 10:40 11:40 13:40 14:40)
+VALID_STAGES=(09:25 10:40 11:40 13:40 14:40 盘后复盘)
 
 # ---- 通用：UTF-8 输出环境（launchd 下 locale 可能为 C）----
 export PYTHONUTF8=1

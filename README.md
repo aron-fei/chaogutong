@@ -300,6 +300,24 @@ git push -u origin master
 
 另一台机器 `git clone` 即拿到全部代码（含 `market-advisor/` vendored 副本）。**密钥与 `data/`、`~/Work/reports/` 仍需按 7.1 / 7.2 单独拷贝，绝不入库。**
 
+### 7.6 微信定时推送（PushPlus，默认开）
+
+`market-advisor` 已内置 PushPlus 推送（`send_wechat_pushplus`），在以下时点自动把内容异步推到你的个人微信：
+
+| 时点 | 推送内容 |
+| --- | --- |
+| 09:25 / 13:40 / 14:40（买入时段） | 操作指令闪卡 |
+| 10:40（卖出决策） | 市场报告 / 待确认单提示 |
+| 11:40（午盘复盘） | 账户梳理 |
+| 15:30（盘后复盘，新增） | 完整盘后复盘报告 |
+
+**启用条件**：
+1. `WECHAT_PUSH_ENABLED` 环境变量 = `1`（本机 `run_slot.sh` 已默认设为 `1`；关掉就设 `0`）。
+2. PushPlus token：放 `market-advisor/pushplus_token.txt` 首行，或设环境变量 `PUSHPLUS_TOKEN`。
+3. 盘后复盘需加载 15:30 定时：`launchctl load ~/Library/LaunchAgents/com.marketadvisor.slot1530.plist`（新机器按 7.3 模板改路径后加载）。
+
+> 注意：PushPlus 推送的是「个人微信」（经第三方服务号中转），不是你认证的真·公众号。要更正式地群发，需另接服务号模板消息（路线②进阶）。
+
 ---
 
 ## 8. 后续路线（进行中，非本仓库当前默认开启）
