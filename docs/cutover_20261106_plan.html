@@ -48,6 +48,14 @@ ul{margin:6px 0;padding-left:22px}li{margin:4px 0}
 <b>执行前请确认下方「切割范围」与「红线清单」；确认前不会动任何文件。</b></p>
 </div>
 
+<div class="card" style="border-left:4px solid #1a5fb4">
+<b>状态更新 · 2026-11-06 09:56：用户已拍板「方案 B 全切含今日（收盘后）」。</b>
+<p style="margin:6px 0 0">当前盘中<b>不执行任何切割</b>，磁盘未改动、服务未重启。已备好 <code>scripts/cutover_after_close.sh</code>：
+默认 DRY_RUN，<code>--apply</code> 带 <b>15:05 时段硬闸</b>（盘中调用会直接 ABORT），收盘后按
+「停服务 → 归档切割 → 自动拉起重建 → 26 项回归 → 红线与接口校验」一次跑完。
+<b>方案 B 命中 3287 个 / 87.8MB</b>，红线跳过 269 个。</p>
+</div>
+
 <div class="lead">
 <b>结论先行</b>
 <ol>
@@ -145,7 +153,27 @@ lsof -ti :8765 | head -1 | xargs kill -9
 </ul>
 </div>
 
-<div class="foot">market-monitor · 数据 cutover DRY_RUN 方案 · 本报告为只读盘点产物，磁盘未发生任何改动 · 不构成投资建议</div>
+<h2>八、收盘后执行时序（方案 B 已确认）</h2>
+<div class="card">
+<pre># 15:05 之后，一条命令
+cd /Users/williamli/Work/market-monitor
+./scripts/cutover_after_close.sh --apply
+
+# 任何时刻回滚
+/opt/homebrew/anaconda3/bin/python3 scripts/cutover_data.py --rollback</pre>
+<ol>
+<li><b>时段硬闸</b>：<code>date +%H%M</code> 早于 1505 直接 ABORT，盘中误敲也不会切。</li>
+<li><b>停服务</b>：kill 8765 端口进程；launchd <code>KeepAlive</code> 会在切割后按磁盘新代码自动拉起。</li>
+<li><b>归档切割</b>：<code>--include-reports --include-shots --include-today --apply</code>，3287 个 / 87.8MB 移入 <code>.archive/cutover_20261106/</code>，逐批 200 个校验 + sha256 MANIFEST。</li>
+<li><b>自动重建</b>：题材索引（146 题材 / 4621 成分股）、昨日涨停基线、快讯缓存、期货 K 线由启动线程重新生成；预期有分钟级空窗。</li>
+<li><b>验证</b>：<code>unittest</code> 26 项、5 个红线文件存在性、4 个关键接口严格 JSON + 200。</li>
+</ol>
+<p class="kv"><b>为什么「按新的建议来做」必须等切割之后</b>：题材强度历史（schema v2）要从 cutover 之后起算才有意义；
+盘中先落盘，写的仍是老口径数据，等于把老数据混进新序列。因此新建议三项（题材强度历史落盘、
+涨停天梯 / 晋级率、老底部放量候选池降位）与切割同批交付，切割完成、服务重建后一次性启用并跑全量回归。</p>
+</div>
+
+<div class="foot">market-monitor · 数据 cutover DRY_RUN 方案 · 方案 B 已确认，待 15:05 后执行 · 当前磁盘未发生任何改动 · 不构成投资建议</div>
 
 </div>
 </body>
