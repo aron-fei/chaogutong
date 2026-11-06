@@ -31,6 +31,7 @@
     /opt/homebrew/anaconda3/bin/python3 theme_board.py --selftest
 """
 import json
+import math
 import threading
 import time
 from datetime import datetime
@@ -49,6 +50,19 @@ def _is_pseudo(name):
 
 def _norm(code):
     return str(code or "").strip().zfill(6)
+
+
+def _finite(v, default=None):
+    """东财/pandas 的 NaN 是 truthy，`float(nan) or 0` 仍是 nan。
+
+    NaN 混进题材元数据后，一是会被 jsonify 写成非法 JSON（前端解析崩），
+    二是在 min/max 归一化里被静默放大成 1.0 污染板块强度分。这里在入口就挡掉。
+    """
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return default
+    return f if math.isfinite(f) else default
 
 
 class ThemeBoard:
@@ -114,11 +128,11 @@ class ThemeBoard:
                 col = "代码" if "代码" in df.columns else df.columns[1]
                 codes = {_norm(x) for x in df[col].astype(str).tolist()}
             return name, codes, dict(
-                zdf=float(info.get("zdf") or 0),
+                zdf=_finite(info.get("zdf"), 0.0),
                 lead=str(info.get("lead") or ""),
-                lead_pct=info.get("lead_pct"),
-                up_count=int(info.get("up_count") or 0),
-                down_count=int(info.get("down_count") or 0),
+                lead_pct=_finite(info.get("lead_pct")),
+                up_count=int(_finite(info.get("up_count"), 0) or 0),
+                down_count=int(_finite(info.get("down_count"), 0) or 0),
                 rank=rank,
             )
         except Exception as e:
@@ -146,11 +160,11 @@ class ThemeBoard:
                     rows.append({
                         "name": nm,
                         "info": {
-                            "zdf": float(r.get("涨跌幅") or 0),
+                            "zdf": _finite(r.get("涨跌幅"), 0.0),
                             "lead": str(r.get("领涨股票") or ""),
-                            "lead_pct": float(r.get("领涨股票-涨跌幅") or 0),
-                            "up_count": int(r.get("上涨家数") or 0),
-                            "down_count": int(r.get("下跌家数") or 0),
+                            "lead_pct": _finite(r.get("领涨股票-涨跌幅"), 0.0),
+                            "up_count": int(_finite(r.get("上涨家数"), 0) or 0),
+                            "down_count": int(_finite(r.get("下跌家数"), 0) or 0),
                         },
                     })
                 except (TypeError, ValueError) as e:

@@ -8,6 +8,7 @@ import data_fetcher  # 侧效应：清代理环境变量，必须最先导入
 import log_util
 
 from flask import Flask, jsonify, render_template, request, redirect, url_for, send_file, g
+from flask.json.provider import DefaultJSONProvider
 from pathlib import Path
 import os
 
@@ -32,6 +33,7 @@ import bottom_radar  # M8 底部放量雷达（ADR-0033，缓存+后台刷新，
 import position_watch  # M9 持仓实时跟踪（ADR-0034，交易时段逐帧评估持仓 → 分层操作建议+异动）
 from datetime import datetime, timedelta
 import json
+import math
 import secrets
 import threading
 import time
@@ -40,6 +42,29 @@ app = Flask(__name__)
 # 防止浏览器/代理缓存模板（开发期频繁改动，老缓存会导致用户看不到新版）
 app.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
 app.jinja_env.auto_reload = True
+
+
+# ---- JSON 安全：所有接口都不允许输出 NaN / Infinity 字面量 ----
+# 根因（2026-11-06）：东财概念榜里的 pandas NaN 经 float(...) 仍是 nan，
+# Python json.dumps 默认 allow_nan=True 会写成 NaN；浏览器 Response.json()
+# 严格解析抛 "Unexpected token 'N'"，导致 L0/L1 区整块显示「取数失败」。
+# 这里做全局兜底，任何来源的非有限浮点一律降级为 null，而不是让前端 JSON 解析崩掉。
+def _json_safe(obj):
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple, set, frozenset)):
+        return [_json_safe(v) for v in obj]
+    return obj
+
+
+class SafeJSONProvider(DefaultJSONProvider):
+    def dumps(self, obj, **kwargs):
+        return super().dumps(_json_safe(obj), **kwargs)
+
+
+app.json = SafeJSONProvider(app)
 
 
 # ---- 远程访问门禁（config.HOST=0.0.0.0，手机/LAN 需密钥，本机回环放行）----

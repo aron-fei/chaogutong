@@ -251,8 +251,9 @@ code{background:#f1f3f6;padding:1px 5px;border-radius:3px;font-size:12.5px}
 <tr><td>开盘啦按时间分段，盘前专门有「明天炒什么」给方向，且明确区分竞价 / 盘中 / 盘后</td><td>盘前 09:12 打开工作台，L0 趋势题材全空，且状态条被误写成「当前为收盘定版」</td><td><span class="ok">已修</span>：<code>theme_picker._session_state()</code> 六态判定（preopen / auction / trading / lunch / paused / closed）；新增 <code>overnight_trends()</code>，用<b>昨日涨停 84 只成分股所属题材 + 200 条真实快讯</b>生成隔夜方向榜，前端标「隔夜口径 · 昨涨停」，开盘产生涨停后自动切回实时 L0。</td></tr>
 <tr><td>开盘啦只认不可撤单的确认信号（9:20 后涨停委买），且不把缺失数据伪装成 0</td><td>「昨日涨停基线」因 sprite 未收到首帧而显示 <b>0 只</b>，真实值是 84 只</td><td><span class="ok">已修</span>：<code>/api/sprite</code> 改用 app 层权威缓存覆盖，实测前端正确显示 84 只。</td></tr>
 <tr><td>竞价层依赖 L2 逐笔委托（涨停委买额、9:20 后不可撤单部分、板块竞价爆量）</td><td>工作台 09:15–09:25 无竞价数据</td><td><span class="no">未做，也不假做</span>：不编造委买额；先用「集合竞价」会话态明确标注当前不可用，待有 L2 数据源再补。</td></tr>
+<tr><td>视觉复核（看截图，不只看接口 200）</td><td>L0/L1 区显示「取数失败」：<code>/api/theme_pick</code> 返回 <code>"lead_pct":NaN</code>，Python <code>jsonify</code> 默认允许 NaN，浏览器 <code>Response.json()</code> 严格解析直接抛错</td><td><span class="ok">已修</span>：源头 <code>theme_board._finite()</code> 挡住 pandas NaN（它还会被 min/max 静默放大成 1.0 污染强度分）；全局 <code>SafeJSONProvider</code> 把所有非有限浮点降级为 <code>null</code>；新增 <code>tests/test_json_safety.py</code> 3 项回归；全路由扫描 26 个 JSON 接口 0 问题。</td></tr>
 </table>
-<p class="kv"><b>验证</b>：全量 <code>unittest</code> 23 项 OK、全项目 AST 0 错误、两个内联 script <code>node --check</code> OK、<code>theme_picker</code> / <code>news_catalyst</code> / <code>dispatch_diag</code> 三个 <code>--selftest</code> PASS、Playwright 对报告页与工作台控制台 <b>0 error / 0 warning</b>；<code>/api/theme_pick?refresh=1</code> 实测 <code>session=auction</code>、<code>trend_source=overnight</code>、8 个隔夜题材、耗时 0ms。</p>
+<p class="kv"><b>验证</b>：全量 <code>unittest</code> 26 项 OK、全项目 AST 0 错误、两个内联 script <code>node --check</code> OK、<code>theme_picker</code> / <code>news_catalyst</code> / <code>dispatch_diag</code> 三个 <code>--selftest</code> PASS、Playwright 对报告页与工作台控制台 <b>0 error / 0 warning</b>；<code>/api/theme_pick</code> 实测 8 个隔夜题材、严格合法 JSON、毫秒级；<b>全路由 31 条中 26 个 JSON 接口全部严格解析通过、0 个 NaN</b>。</p>
 </div>
 
 <h2>六、资料可信度与边界声明</h2>
