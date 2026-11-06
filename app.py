@@ -1605,15 +1605,28 @@ def api_watchlist_get():
 
 @app.route("/api/watchlist", methods=["POST"])
 def api_watchlist_post():
-    """自选股 CRUD：action=add|remove|clear_cache。"""
+    """自选股 CRUD：action=add|remove|set_scope|clear_cache。
+
+    scope 分账铁律（用户 2026-11-06）：题材和权重是两套逻辑，不能混淆。
+    - short：短线/题材票，进 13:40/14:40 派单供票源；
+    - trend：权重/趋势核心票（如中芯国际/宁德时代），被隔离在短线供票源之外，
+      买卖判定只走中线趋势池（trend_research）。
+    """
     d = request.get_json(silent=True) or {}
     action = d.get("action")
     try:
         if action == "add":
-            items = watchlist.add(d["code"], d.get("name", ""))
+            items = watchlist.add(d["code"], d.get("name", ""), d.get("scope", "short"))
             return jsonify({"ok": True, "items": items})
         elif action == "remove":
             items = watchlist.remove(d["code"])
+            return jsonify({"ok": True, "items": items})
+        elif action == "set_scope":
+            if d.get("scope") not in ("short", "trend"):
+                return jsonify({"ok": False, "error": "scope 须为 short/trend"})
+            items = watchlist.set_scope(d["code"], d["scope"])
+            if items is None:
+                return jsonify({"ok": False, "error": f"{d.get('code')} 不在自选池"})
             return jsonify({"ok": True, "items": items})
         elif action == "clear_cache":
             # 强制重拉 K 线（盘中调过 K 线历史时用）
@@ -1623,7 +1636,7 @@ def api_watchlist_post():
                 shutil.rmtree(cache)
             return jsonify({"ok": True, "cleared": True})
         else:
-            return jsonify({"ok": False, "error": "action 须为 add/remove/clear_cache"})
+            return jsonify({"ok": False, "error": "action 须为 add/remove/set_scope/clear_cache"})
     except (KeyError, ValueError) as e:
         return jsonify({"ok": False, "error": str(e)})
     except Exception as e:

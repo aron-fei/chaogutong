@@ -67,10 +67,19 @@ def list_items():
         return _load()
 
 
-def add(code, name=""):
+def add(code, name="", scope="short"):
+    """加入自选。
+
+    scope（2026-11-06，用户分账铁律：题材和权重是两套逻辑，不能混淆）：
+      · "short" 短线/题材票 —— 参与 13:40/14:40 自选供票源（ADR-0041 短线操作池）
+      · "trend" 权重/趋势核心票 —— **不进短线供票源**，只走中线趋势池
+        （trend_research.py 的反转启动/趋势状态），本页仅做行情 + DK 点观察
+    旧数据无 scope 字段 → 按 "short" 处理（兼容既有行为）。
+    """
     code = str(code).strip()
     if not code.isdigit() or len(code) != 6:
         raise ValueError("股票代码须为 6 位数字")
+    scope = "trend" if str(scope or "").strip().lower() == "trend" else "short"
     with LOCK:
         items = _load()
         if any(i["code"] == code for i in items):
@@ -78,8 +87,26 @@ def add(code, name=""):
         items.append({
             "code": code,
             "name": str(name).strip() or code,
+            "scope": scope,
             "added_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
         })
+        _save(items)
+        return items
+
+
+def set_scope(code, scope):
+    """改单票 scope（trend/short）。命中返回更新后的全部条目；未找到返回 None。"""
+    code = str(code).strip()
+    scope = "trend" if str(scope or "").strip().lower() == "trend" else "short"
+    with LOCK:
+        items = _load()
+        hit = False
+        for i in items:
+            if i["code"] == code:
+                i["scope"] = scope
+                hit = True
+        if not hit:
+            return None
         _save(items)
         return items
 
@@ -345,6 +372,8 @@ def _items_for_dk():
             "name": i.get("name") or i["code"],
             "added_at": i.get("added_at", ""),
             "_from": "watchlist",
+            # 2026-11-06 分账铁律：scope 必须透传（丢了会让 evaluate 恒读 short）
+            "scope": str(i.get("scope") or "short"),
         }
     # 再加持仓（若 code 已在自选则保留自选的标记，不覆盖）
     for p in positions:
@@ -354,6 +383,8 @@ def _items_for_dk():
                 "name": p.get("name") or p["code"],
                 "added_at": p.get("added_at", ""),
                 "_from": "portfolio",
+                # 持仓默认按短线口径展示（scope 标签可点击切换）
+                "scope": str(p.get("scope") or "short"),
             }
     return list(by_code.values())
 
@@ -387,6 +418,9 @@ def evaluate():
             "pct": q.get("pct"),
             "added_at": it.get("added_at"),
             "from_portfolio": bool(it.get("_from") == "portfolio"),
+            # 2026-11-06 分账铁律：trend=权重/趋势核心票（不进短线供票源，走趋势池）；
+            # short=短线/题材票（参与 13:40/14:40 自选供票源）。旧数据缺省按 short。
+            "scope": str(it.get("scope") or "short"),
             "dk_status": dk["status"] if dk else "unknown",
             "dk_streak": dk["streak_days"] if dk else 0,
             "dk_cur": dk["cur_dk"] if dk else None,

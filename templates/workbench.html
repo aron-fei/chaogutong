@@ -311,13 +311,13 @@
   .dtbl-risk th:nth-child(3), .dtbl-risk td:nth-child(3) { text-align: right; }
 
   /* ===== 自选股池·DK点操盘线 ===== */
-  .wl-add-row { display: grid; grid-template-columns: 180px 1fr auto auto;
+  .wl-add-row { display: grid; grid-template-columns: 170px 1fr 130px auto auto;
                 gap: 8px; padding: 10px 14px; align-items: center;
                 border-bottom: 1px solid #eaeef2; }
-  .wl-add-row input { padding: 7px 10px; border: 1px solid #d0d7de;
+  .wl-add-row input, .wl-add-row select { padding: 7px 10px; border: 1px solid #d0d7de;
                 border-radius: 6px; font-size: 13px; background: #fff;
                 font-family: inherit; }
-  .wl-add-row input:focus { outline: none; border-color: #0969da;
+  .wl-add-row input:focus, .wl-add-row select:focus { outline: none; border-color: #0969da;
                 box-shadow: 0 0 0 3px rgba(9,105,218,.15); }
   .wl-btn-add { padding: 7px 18px; background: #0969da; color: #fff;
                 border: none; border-radius: 6px; cursor: pointer;
@@ -365,6 +365,8 @@
   .wl-banner { padding: 8px 14px; background: #ddf4ff; color: #0969da;
                font-size: 12px; border-bottom: 1px solid #b6e3ff;
                line-height: 1.5; }
+  .wl-banner-scope { background: #f3e8ff; color: #8250df;
+                     border-bottom: 1px solid #d2c2f0; }
   .wl-src { display: inline-block; padding: 2px 8px; border-radius: 10px;
             font-size: 11px; margin-right: 8px; font-weight: 600; }
   .wl-src-pf { background: #fff8e6; color: #9a6700; border: 1px solid #f0c674; }
@@ -374,6 +376,13 @@
                 background: #fff8e6; color: #9a6700; border: 1px solid #f0c674;
                 border-radius: 8px; font-size: 10px; font-weight: 600;
                 vertical-align: middle; }
+  /* 分账标签：trend=权重/趋势核心票（不进短线供票源），short=短线/题材票 */
+  .wl-scope { display: inline-block; padding: 1px 6px; margin-left: 6px;
+              border-radius: 8px; font-size: 10px; font-weight: 600;
+              vertical-align: middle; cursor: pointer; user-select: none; }
+  .wl-scope-trend { background: #f3e8ff; color: #8250df; border: 1px solid #d2c2f0; }
+  .wl-scope-short { background: #fff0f6; color: #bf3989; border: 1px solid #f5b6cf; }
+  .wl-scope:hover { filter: brightness(0.96); }
   .wl-rules { padding: 10px 14px 12px; border-top: 1px solid #eaeef2;
               background: #f6f8fa; font-size: 12px; }
   .wl-rules .r-hd { color: #656d76; margin-bottom: 5px; }
@@ -1861,6 +1870,10 @@
           <div class="wl-add-row" data-page-node-id="EDfbAAb7zTjD22cmasEIk8">
             <input id="wl-code" type="text" maxlength="6" placeholder="代码（6 位数字，如 600519）" inputmode="numeric" pattern="\d{6}" data-page-node-id="R5DNjAuzpFTnqVbKgaYD3e" />
             <input id="wl-name" type="text" maxlength="20" placeholder="名称（可留空自动识别）" data-page-node-id="fdHAeGp0PfmtbXDRbXFwCd" />
+            <select id="wl-scope-sel" title="分账：短线票进 13:40/14:40 派单供票源；趋势核心票只走中线趋势池，绝不进短线供票源" data-page-node-id="Gd3sWlScope1x">
+              <option value="short" selected>短线·题材</option>
+              <option value="trend">趋势·权重核心</option>
+            </select>
             <button id="wl-add-btn" class="wl-btn-add" data-page-node-id="eC00UyuJ8ro8QgVDpxqK0w">+ 添加自选</button>
             <button id="wl-refresh-btn" class="wl-btn-refresh" title="强制重算 DK（清 K 线缓存）" data-page-node-id="vSYWSbzz24CaTtLwXVao1X">⟳ 重算 DK</button>
           </div>
@@ -4007,6 +4020,11 @@ function renderWatchlist(d) {
     banner = `<div class="wl-banner">📌 当前 DK 监控 = <b>自选股 ∪ 持仓</b>。持仓项目不可在此删除（请到「持仓管理」操作）。</div>`;
   }
   const items = d.items || [];
+  // 分账汇总：题材(短线) 与 权重(趋势) 两套逻辑不可混淆，页面必须可见
+  const trendCount = items.filter(it => it.scope === 'trend').length;
+  if (trendCount > 0) {
+    banner += `<div class="wl-banner wl-banner-scope">🔒 分账隔离：${trendCount} 只「趋势·权重核心票」已隔离在 13:40/14:40 短线派单供票源之外，买卖判定只走中线趋势池（trend_research）。点击行内「趋势」标签可切换。</div>`;
+  }
   const tb = $('tbl-watchlist').querySelector('tbody');
   // 把 banner 塞到 panel-hd 旁
   const note = $('wl-note');
@@ -4078,12 +4096,19 @@ function renderWatchlist(d) {
     const cd = it.code;
     const fromTag = it.from_portfolio
       ? `<span class="wl-from-pf">持仓</span>` : '';
+    // 分账标签：题材(短线) 与 权重(趋势) 是两套逻辑，页面必须可见、可切换
+    const isTrend = it.scope === 'trend';
+    const scopeTag = isTrend
+      ? `<span class="wl-scope wl-scope-trend" data-code="${cd}" data-scope="trend"
+             title="权重/趋势核心票：不进 13:40/14:40 短线供票源，买卖判定走中线趋势池（反转启动/核心趋势等）。点击可切回短线">趋势</span>`
+      : `<span class="wl-scope wl-scope-short" data-code="${cd}" data-scope="short"
+             title="短线/题材票：进 13:40/14:40 派单供票源，走打板纪律。点击可切为趋势核心票">短线</span>`;
     // 持仓来源不可删（避免误删 portfolio）
     const opCell = it.from_portfolio
       ? '<span class="c-dim" title="持仓来源，需到「持仓管理」删除">·</span>'
       : `<button class="wl-del" data-code="${cd}" title="删除">×</button>`;
     return `<tr>
-      <td><div class="wl-name">${nm} ${fromTag}</div><div class="wl-code">${cd}</div></td>
+      <td><div class="wl-name">${nm} ${fromTag} ${scopeTag}</div><div class="wl-code">${cd}</div></td>
       <td class="${pCls}" style="font-weight:600">${pStr}</td>
       <td class="${pCls}">${pctStr}</td>
       <td>${dkCell}</td>
@@ -4107,6 +4132,26 @@ function renderWatchlist(d) {
       loadWatchlist();
     };
   });
+  // 绑定分账标签点击切换（题材/权重两套逻辑，切换需明确确认）
+  tb.querySelectorAll('.wl-scope').forEach(tag => {
+    tag.onclick = async () => {
+      const cd = tag.dataset.code;
+      const cur = tag.dataset.scope;
+      const next = cur === 'trend' ? 'short' : 'trend';
+      const msg = next === 'trend'
+        ? `确认把 ${cd} 切为「趋势·权重核心票」？\n\n它将被隔离在 13:40/14:40 短线派单供票源之外，买卖判定只走中线趋势池。`
+        : `确认把 ${cd} 切回「短线·题材票」？\n\n它将重新进入 13:40/14:40 派单供票源，走短线打板纪律。`;
+      if (!confirm(msg)) return;
+      const r = await fetch('/api/watchlist', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({action: 'set_scope', code: cd, scope: next}),
+      });
+      const d = await r.json();
+      if (!d.ok) { alert(d.error || '切换失败'); return; }
+      loadWatchlist();
+    };
+  });
 }
 
 // 添加自选
@@ -4117,6 +4162,8 @@ function bindWatchlistUI() {
   const submit = async () => {
     const code = $('wl-code').value.trim();
     const name = $('wl-name').value.trim();
+    const scopeSel = $('wl-scope-sel');
+    const scope = scopeSel ? scopeSel.value : 'short';
     if (!/^\d{6}$/.test(code)) { alert('代码须为 6 位数字'); return; }
     addBtn.disabled = true;
     addBtn.textContent = '拉取行情中…';
@@ -4124,7 +4171,7 @@ function bindWatchlistUI() {
       const r = await fetch('/api/watchlist', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({action: 'add', code, name}),
+        body: JSON.stringify({action: 'add', code, name, scope}),
       });
       const d = await r.json();
       if (!d.ok) { alert(d.error || '添加失败'); return; }
