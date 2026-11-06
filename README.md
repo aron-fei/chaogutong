@@ -212,3 +212,97 @@ bash scripts/rotate_logs.sh                 # DRY_RUN，确认后才加 --apply
 - 题材索引缓存 TTL 30 分钟，重启优先读本地缓存；接口全挂时自动降级为「行业兜底」，前端会明确标注，不伪装成细分题材。
 - 依赖精确版本见 `requirements.lock.txt`；日常安装用 `requirements.txt`。
 - 决策与架构记录：`~/Work/ObsidianVault/05-决策记录ADR/`（`market-monitor` 项目档案在 `06-项目档案/`）。
+
+---
+
+## 7. 跨机部署 / 迁移指南
+
+本仓库**只含代码**。要让另一台 macOS「和这台一样」，必须把下面三类**仓库外资产**一起搬过去——它们被 `.gitignore` 排除，不进版本库。
+
+### 7.1 必须单独转移的资产（不要指望 git clone）
+
+| 资产 | 本机位置 | 说明 |
+| --- | --- | --- |
+| 运行时数据 / 配置 | `market-monitor/data/` | watchlist.json、us_a_map.json、fut_sector_map.json、gjd_etf_base.json、各类缓存。**其中 `access_key.json`、`portfolio.json` 是密钥** |
+| 全部时段报告 | `~/Work/reports/` | 460+ 个 `pro_report_*`、slot_status.json、各类状态文件——工作台只读展示的就是这里 |
+| 推送 / 券商密钥 | `market-advisor/pushplus_token.txt`、`broker_config.json` | 不入库；PushPlus token 也可走环境变量 `PUSHPLUS_TOKEN` |
+| 常驻调度 | `~/Library/LaunchAgents/com.marketmonitor.flask.plist` + `com.marketadvisor.slot*.plist` | 见 7.3 参数化 |
+
+> 代码 + 上述资产 = 这台电脑的完整状态。只 clone 仓库跑不起来（缺数据、缺密钥、路径写死）。
+
+### 7.2 新机部署步骤（macOS）
+
+1. **装 Python 环境**：推荐 anaconda（自带 akshare / pandas）；否则 `brew install python` 后 `pip install -r requirements.lock.txt`。
+2. **克隆**：`git clone <你的私有远程> ~/Work/market-monitor`；`cd ~/Work/market-monitor`。
+3. **恢复报告目录**：把本机 `~/Work/reports/` 整个拷到新机同名路径；或在新机设 `REPORTS_DIR=/新路径`（launchd 下须在 plist 的 `EnvironmentVariables` 里设）。
+4. **恢复数据 / 密钥**：把本机 `market-monitor/data/` 拷到新机；把 `pushplus_token.txt`、`broker_config.json` 拷到新机 `market-monitor/market-advisor/`。
+5. **装依赖**：`pip install -r requirements.lock.txt` 与 `pip install -r market-advisor/requirements.txt`。
+6. **设环境变量**（新机路径 / 用户名不同时必做，写在 plist 或 `~/.zshrc`）：
+   - `REPORTS_DIR` —— 报告目录（默认 `~/Work/reports`）
+   - `MARKET_MONITOR_DIR` —— 仓库根（默认 `/Users/williamli/Work/market-monitor`，新机改成本机仓库根）
+   - `PUSHPLUS_TOKEN` 或放 `market-advisor/pushplus_token.txt`
+   - `WORKBENCH_KEY` —— 工作台访问密钥（覆盖 `data/access_key.json`）
+7. **启动工作台**：见 7.3 加载 flask plist 后 `curl -s http://127.0.0.1:8765/api/health`。
+8. **启用定时报告**：加载 `com.marketadvisor.slot*.plist`（改路径），或手动 `bash market-advisor/run_slot.sh 09:25`。
+
+### 7.3 launchd plist（路径参数化模板）
+
+把 `YOUR_HOME` 换成新机 `$HOME`、脚本指向 `market-advisor/run_slot.sh`。示例（09:25 段，其余时段改 `Minute` / `Label` 即可）：
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+    <key>Label</key><string>com.marketadvisor.slot0925</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>YOUR_HOME/Work/market-monitor/market-advisor/run_slot.sh</string>
+        <string>09:25</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>YOUR_HOME/Work/market-monitor/market-advisor</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>REPORTS_DIR</key><string>YOUR_HOME/Work/reports</string>
+        <key>MARKET_MONITOR_DIR</key><string>YOUR_HOME/Work/market-monitor</string>
+    </dict>
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>9</integer><key>Minute</key><integer>25</integer></dict>
+        <!-- Weekday 2..5 同理 -->
+    </array>
+    <key>StandardOutPath</key><string>/tmp/market-advisor-0925.out.log</string>
+    <key>StandardErrorPath</key><string>/tmp/market-advisor-0925.err.log</string>
+    <key>RunAtLoad</key><false/>
+</dict>
+</plist>
+```
+
+flask plist 同理：把 `ProgramArguments` 里的 `app.py` 路径与 `WorkingDirectory` 指向新机仓库根，并加 `EnvironmentVariables`（同上）。
+
+### 7.4 一致性校验
+
+```bash
+bash market-advisor/run_slot.sh --selftest     # 依赖 / 路径零副作用自检
+PY=/opt/homebrew/anaconda3/bin/python3
+$PY -m unittest discover -s tests -v           # market-monitor 70 项回归
+```
+
+### 7.5 私有远程仓库
+
+本仓库目前无远程。建好私有仓库（GitHub / Gitee）后：
+
+```bash
+git remote add origin <你的私有仓库 URL>
+git push -u origin master
+```
+
+另一台机器 `git clone` 即拿到全部代码（含 `market-advisor/` vendored 副本）。**密钥与 `data/`、`~/Work/reports/` 仍需按 7.1 / 7.2 单独拷贝，绝不入库。**
+
+---
+
+## 8. 后续路线（进行中，非本仓库当前默认开启）
+
+- **路线② 每日报告 / 复盘定时发微信**：`market-advisor/market_scheduler.py` 已内置 PushPlus 推送（`send_wechat_pushplus`，受 `WECHAT_PUSH_ENABLED` 开关控制，默认关）。启用：设 `WECHAT_PUSH_ENABLED=1` + `PUSHPLUS_TOKEN`，已在四个时段报告与复盘收尾挂接。
+- **路线① 工作台上线为微信小程序**：采用 web-view 嵌入现有 H5（最快）。需把工作台部署到 HTTPS 域名并在小程序后台配置业务域名白名单；后端沿用本 Flask（需公网可访问）。
