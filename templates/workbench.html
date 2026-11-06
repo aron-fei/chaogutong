@@ -2402,6 +2402,11 @@ function renderZtBoardGroups(d) {
         + `东财行业名对不上时按近似映射，带 <span class="kpl-ap">~</span> 的行表示该行行情取自另一个腾讯板块）`
         + ` · <b title="${esc(sm.note || '')}">强度：本地口径</b>`;
     }
+    const hidden = all.length - pool.length;
+    if (_ztMin2 && hidden > 0) {
+      status.innerHTML += `<br>已按「≥2家」过滤掉 ${hidden} 个只有 1 只涨停的边缘板块 —— `
+        + `<b># 是强度名次，故会跳号</b>（如 9 → 12）；点「≥2家」取消过滤可看全量`;
+    }
     if (sm.has_history === false) {
       status.innerHTML += '<br><span class="warn">名次变化需至少两档历史（5 分钟一档），首档不显示 ↑↓ 箭头</span>';
     }

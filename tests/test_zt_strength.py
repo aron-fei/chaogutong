@@ -144,6 +144,15 @@ class TestHistoryFile(unittest.TestCase):
         zbs._append_hist({"b": "b2", "dim": "theme", "items": {"A": 200}})
         self.assertEqual(zbs.prev_strength_map("theme", excludes_bucket="b2"), {"A": 100})
 
+    def test_empty_snapshot_writes_nothing(self):
+        zbs.annotate([], "theme", record=True)
+        self.assertEqual(zbs._read_hist(), [], "空快照不得写空档")
+
+    def test_empty_record_does_not_clobber_prev(self):
+        zbs._append_hist({"b": "b1", "dim": "theme", "items": {"A": 9000}})
+        zbs._append_hist({"b": "b2", "dim": "theme", "items": {}})
+        self.assertEqual(zbs.prev_strength_map("theme"), {"A": 9000})
+
     def test_industry_dim_records_names(self):
         """行业分组只有 industry 键，历史 items 不能写成空对象。"""
         gs = [{"industry": "光伏设备", "count": 4, "max_lianban": 4,
@@ -181,6 +190,22 @@ class TestZhaRate(unittest.TestCase):
 
 
 class TestDashboardPayload(unittest.TestCase):
+    """注意：test_client 里的 dashboard 快照是空的，若走真实 HIST_FILE 会写入空档，
+    把线上历史打出空洞。这里统一重定向到临时文件。"""
+
+    def setUp(self):
+        import tempfile
+        from pathlib import Path as _P
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self._old = zbs.HIST_FILE
+        zbs.HIST_FILE = _P(self.tmpdir.name) / "hist.jsonl"
+        zbs._last_bucket.clear()
+
+    def tearDown(self):
+        zbs.HIST_FILE = self._old
+        zbs._last_bucket.clear()
+        self.tmpdir.cleanup()
+
     def test_fields_present(self):
         import app as app_module
         with app_module.app.test_client() as c:

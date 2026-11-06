@@ -160,7 +160,9 @@ def prev_strength_map(dim, excludes_bucket=None):
         if excludes_bucket and rec.get("b") == excludes_bucket:
             continue
         items = rec.get("items") or {}
-        if isinstance(items, dict):
+        # 空 items 必须跳过：启动初期 / 单元测试的空快照会写出一条空记录，
+        # 若在这里照收，就会把前一个有效档位覆盖成空，名次变化永远算不出来。
+        if isinstance(items, dict) and items:
             prev = items          # 顺序覆盖 → 最后一条（最新）胜出
     return prev
 
@@ -216,11 +218,15 @@ def _record(dim, bucket, scored):
     if _last_bucket.get(dim) == bucket:
         return
     top = sorted(scored, key=lambda x: -x.get("strength", 0))[:80]
+    items = {_gname(g): g.get("strength", 0) for g in top if _gname(g)}
+    if not items:
+        # 启动初期 / 空快照：不写空档，免得把历史序列打出一个空洞
+        return
     _append_hist({
         "b": bucket,
         "ts": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "dim": dim,
-        "items": {_gname(g): g.get("strength", 0) for g in top if _gname(g)},
+        "items": items,
     })
     _last_bucket[dim] = bucket
 
