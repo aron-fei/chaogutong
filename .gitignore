@@ -15,6 +15,7 @@ data/*cache*/
 data/theme_cons_cache.json
 data/theme_cons_cache.json.tmp
 data/prev_zt.json
+data/zt_strength_history.jsonl
 data/news_catalyst_cache.json
 data/a_codes.json
 data/bottom_surge_latest.json

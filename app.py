@@ -31,6 +31,7 @@ import news_catalyst  # 2026-11-05 v2：新闻/传闻催化（东财快讯真实
 import dispatch_diag  # 2026-11-05 体检剩余项：零派单根因诊断（只读）
 import bottom_radar  # M8 底部放量雷达（ADR-0033，缓存+后台刷新，扫描整轮 5~6s）
 import position_watch  # M9 持仓实时跟踪（ADR-0034，交易时段逐帧评估持仓 → 分层操作建议+异动）
+import zt_board_stat  # 2026-11-06 开盘啦借鉴：板块强度榜 / 涨停晋级率 / 亏钱效应（纯现算）
 from datetime import datetime, timedelta
 import json
 import math
@@ -205,7 +206,7 @@ nc = news_catalyst.instance()          # 新闻 / 传闻催化（东财快讯真
 _trend_lock = threading.Lock()
 _trend_names = []
 _prev_zt_lock = threading.Lock()
-_prev_zt_cache = {"date": "", "source_date": "", "codes": []}
+_prev_zt_cache = {"date": "", "source_date": "", "codes": [], "items": []}
 PREV_ZT_FILE = config.BASE_DIR / "data" / "prev_zt.json"
 
 
@@ -213,6 +214,16 @@ def _prev_zt_codes():
     """供 L2 排除连板接力：只读内存。取不到时返回空集（fail-open，不编造）。"""
     with _prev_zt_lock:
         return set(_prev_zt_cache["codes"])
+
+
+def _prev_zt_items():
+    """昨日涨停池分层明细（code + 连板数），供晋级率按层级统计。
+
+    老缓存只有 codes 没有 items，此时返回空列表，晋级率退化为单一总口径并在
+    payload 里标 prev_ladder_known=False —— 不拿总口径冒充「1板→2板」分层。
+    """
+    with _prev_zt_lock:
+        return list(_prev_zt_cache.get("items") or [])
 
 
 def _trend_names_provider():
@@ -244,7 +255,9 @@ def _refresh_prev_zt():
     try:
         if PREV_ZT_FILE.exists():
             d = json.loads(PREV_ZT_FILE.read_text(encoding="utf-8"))
-            if d.get("date") == today and d.get("codes"):
+            # 必须带 items（分层明细）才算完整；老版本只写了 codes，
+            # 缺 items 就走网络重取，否则当天的分层晋级率会一直是空。
+            if d.get("date") == today and d.get("codes") and d.get("items"):
                 with _prev_zt_lock:
                     _prev_zt_cache.update(d)
                 return
@@ -267,13 +280,40 @@ def _refresh_prev_zt():
             if df is not None and len(df):
                 codes = sorted({str(c).strip().zfill(6)
                                 for c in df["代码"].astype(str).tolist()})
-                data = {"date": today, "source_date": ds, "codes": codes}
+                # 分层明细：晋级率要按「昨 N 板 → 今 N+1 板」统计，只存 codes 做不到
+                items = []
+                try:
+                    lb_col = "连板数" if "连板数" in df.columns else None
+                    for _, row in df.iterrows():
+                        c = str(row.get("代码") or "").strip().zfill(6)
+                        if not c:
+                            continue
+                        lb = row.get(lb_col) if lb_col else 1
+                        try:
+                            lb = int(float(lb))
+                        except (TypeError, ValueError):
+                            lb = 1
+                        items.append({"code": c, "name": str(row.get("名称") or ""),
+                                      "lianban": max(lb, 1)})
+                except Exception as e:
+                    print(f"[strategy] 昨日涨停分层解析失败: {type(e).__name__}: {e}")
+                    items = []
+                # akshare 涨停池偶发同股重复行（实测 84 行 / 82 只），按代码去重取最高连板，
+                # 否则分层晋级率的分母会被虚增。
+                if items:
+                    best = {}
+                    for it in items:
+                        prev = best.get(it["code"])
+                        if prev is None or it["lianban"] > prev["lianban"]:
+                            best[it["code"]] = it
+                    items = sorted(best.values(), key=lambda x: (-x["lianban"], x["code"]))
+                data = {"date": today, "source_date": ds, "codes": codes, "items": items}
                 with _prev_zt_lock:
                     _prev_zt_cache.update(data)
                 PREV_ZT_FILE.parent.mkdir(parents=True, exist_ok=True)
                 PREV_ZT_FILE.write_text(json.dumps(data, ensure_ascii=False),
                                         encoding="utf-8")
-                print(f"[strategy] 昨日涨停基线 {ds}: {len(codes)} 只")
+                print(f"[strategy] 昨日涨停基线 {ds}: {len(codes)} 只 / 分层 {len(items)} 条")
                 return
             day -= timedelta(days=1)
         print("[strategy] 近 8 天未取到涨停池，首板基线暂空（fail-open，不编造）")
@@ -385,14 +425,20 @@ def _build_zt_board_groups(md_snap, brank_snap):
             board_by_name.setdefault(nm, b)
 
     def match_board(industry):
+        """返回 (板块, 匹配方式)。匹配方式供前端标注「近似」，不把映射结果伪装成精确值。
+
+        2026-11-06：腾讯行业榜实测只返回 31 个板块，东财一级行业名与之并不一一对应
+        （如「光伏设备」腾讯榜无此项 → 落到别名「电力设备」）。此前没暴露匹配方式，
+        导致「光伏设备」与「电力」共用同一板块的净额/涨速/领涨，看起来像数据错乱。
+        """
         if not industry:
-            return {}
+            return {}, ""
         if industry in board_by_name:
-            return board_by_name[industry]
+            return board_by_name[industry], "exact"
         # 模糊匹配：一方包含另一方（东财「半导体」vs 腾讯概念「半导体」等）
         for nm, b in board_by_name.items():
             if nm and (nm in industry or industry in nm):
-                return b
+                return b, "fuzzy"
         # 回退：东财行业名 → 腾讯一级行业别名表（解决「工业金属→有色金属」等命名差异）
         alias_map = getattr(config, "ZT_INDUSTRY_TO_TENCENT_BOARD", {})
         alias = alias_map.get(industry)
@@ -403,8 +449,8 @@ def _build_zt_board_groups(md_snap, brank_snap):
                     alias = v
                     break
         if alias and alias in board_by_name:
-            return board_by_name[alias]
-        return {}
+            return board_by_name[alias], "alias"
+        return {}, ""
 
     groups = {}
     for s in zt:
@@ -429,7 +475,7 @@ def _build_zt_board_groups(md_snap, brank_snap):
         })
     # 匹配板块行情指标
     for ind, g in groups.items():
-        b = match_board(ind)
+        b, how = match_board(ind)
         if b:
             g["netflow_yi"] = b.get("netflow_yi")
             g["speed"] = b.get("speed")
@@ -437,6 +483,8 @@ def _build_zt_board_groups(md_snap, brank_snap):
             g["lead"] = b.get("lead")
             g["lead_pct"] = b.get("lead_pct")
             g["type"] = b.get("type")
+            g["board_name"] = b.get("name")
+            g["board_match"] = how       # exact / fuzzy / alias，前端非 exact 标 ~
     # 组内股票按连板数降序
     for g in groups.values():
         g["stocks"].sort(key=lambda x: (-(x.get("lianban") or 1), str(x.get("first_time") or "")))
@@ -537,6 +585,9 @@ def _build_zt_theme_groups(md_snap, brank_snap):
             g["netflow_yi"] = im.get("netflow_yi")
             g["speed"] = im.get("speed")
             g["proxy_industry"] = main_ind if g["kind"] != "industry" else None
+            # 透传行业→腾讯板块的匹配方式，前端据此标 ~（近似），不伪装精确
+            g["board_name"] = im.get("board_name")
+            g["board_match"] = im.get("board_match")
             if g["kind"] == "industry":
                 g["zdf"] = im.get("zdf")
                 g["lead"] = im.get("lead")
@@ -555,14 +606,45 @@ def api_dashboard():
     snap = md.snapshot()
     try:
         brank_snap = brank.snapshot()
-        snap["zt_board_groups"] = _build_zt_board_groups(snap, brank_snap)
-        snap["zt_theme_groups"] = _build_zt_theme_groups(snap, brank_snap)
+        groups_ind = _build_zt_board_groups(snap, brank_snap)
+        groups_theme = _build_zt_theme_groups(snap, brank_snap)
+        # 2026-11-06 开盘啦借鉴：板块强度榜（本地口径，0-10000）+ 名次变化
+        # 名次变化依赖 data/zt_strength_history.jsonl（5 分钟一档），无历史则 None
+        st_theme = zt_board_stat.annotate(groups_theme, "theme")
+        st_ind = zt_board_stat.annotate(groups_ind, "industry")
+        snap["zt_theme_groups"] = st_theme["groups"]
+        snap["zt_board_groups"] = st_ind["groups"]
+        snap["zt_strength_meta"] = {
+            "scale": "local",
+            "max": zt_board_stat.STRENGTH_MAX,
+            "has_history": bool(st_theme["has_history"] or st_ind["has_history"]),
+            "bucket": st_theme["bucket"],
+            # 腾讯板块榜实测可用条数：行业名对不上时靠近似映射，前端据此提示
+            "board_total": len((brank_snap or {}).get("boards") or []),
+            "note": ("强度为本地口径：涨停家数34% / 最高连板20% / 涨幅18% / 涨速12% / 净额16% "
+                     "加权到 0-10000，缺失维度剔除后重归一（不补 0）。不是开盘啦官方数值。"),
+        }
     except Exception as e:
         print(f"[dashboard] 涨停池板块分组失败: {type(e).__name__}: {e}")
         import traceback
         traceback.print_exc()
         snap["zt_board_groups"] = []
         snap["zt_theme_groups"] = []
+        snap["zt_strength_meta"] = {"scale": "local", "has_history": False,
+                                   "note": "板块强度计算失败，仅展示原始分组"}
+    try:
+        snap["zt_promotion"] = zt_board_stat.promotion_stats(
+            snap.get("zt_pool_all") or snap.get("zt_pool") or [],
+            _prev_zt_codes(), prev_items=_prev_zt_items(),
+            full_rows=md.get_full_rows()[0])
+        snap["zt_zha_rate"] = zt_board_stat.zha_rate(snap.get("zt_count"), snap.get("zb_count"))
+        snap["prev_zt"] = {"count": len(_prev_zt_codes()),
+                           "source_date": _prev_zt_cache.get("source_date"),
+                           "ladder_known": bool(_prev_zt_items())}
+    except Exception as e:
+        print(f"[dashboard] 晋级率计算失败: {type(e).__name__}: {e}")
+        snap["zt_promotion"] = None
+        snap["zt_zha_rate"] = None
     try:
         snap["theme_status"] = tboard.snapshot()
     except Exception as e:

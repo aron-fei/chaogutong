@@ -306,6 +306,9 @@
   .dtbl .lianban { font-weight: 700; }
   .dtbl .lianban.h { color: #cf222e; }
   .panel-section { max-height: 60vh; overflow-y: auto; }
+  /* 风险池两张表：数字列右对齐，行业列留给右侧，避免等宽四列把数字悬在中间 */
+  .dtbl-risk th:nth-child(2), .dtbl-risk td:nth-child(2),
+  .dtbl-risk th:nth-child(3), .dtbl-risk td:nth-child(3) { text-align: right; }
 
   /* ===== 自选股池·DK点操盘线 ===== */
   .wl-add-row { display: grid; grid-template-columns: 180px 1fr auto auto;
@@ -501,6 +504,84 @@
     .ztbg-m.hide-sm { display: none; }
     .ztbg-name { max-width: 120px; }
   }
+
+  /* ===== 2026-11-06 开盘啦式改造：情绪计数条 / 板块强度榜密集表格 / 天梯晋级率 ===== */
+  /* ① 情绪计数条：开盘啦「市场情绪」是 tab 即数量对比，这里做成一排等宽数字 */
+  .kpl-emo { display: flex; padding: 2px 14px 8px; flex-wrap: wrap; }
+  .kpl-emo-cell { flex: 1 1 92px; min-width: 0; padding: 5px 12px 5px 0; }
+  .kpl-emo-cell + .kpl-emo-cell { border-left: 1px solid #eef1f4; padding-left: 12px; }
+  .kpl-emo-cell b { display: block; font: 700 17px/1.25 "SF Mono", Menlo, monospace; color: #1f2328; }
+  .kpl-emo-cell span { display: block; font-size: 10.5px; color: #8c959f; margin-top: 1px;
+                       white-space: nowrap; }
+  .kpl-emo-cell.up b { color: #cf222e; }
+  .kpl-emo-cell.down b { color: #1a7f37; }
+  .kpl-emo-cell.warn b { color: #9a6700; }
+  .kpl-emo-cell.info b { color: #0969da; }
+  .kpl-emo-note { padding: 0 14px 10px; font-size: 11px; color: #8c959f; line-height: 1.55; }
+  .kpl-emo-note .warn { color: #9a6700; }
+
+  /* ② 板块强度榜：密集可排序表格（开盘啦「板块 · 历史统计」的排版方式） */
+  .kpl-loc { font-size: 9.5px; font-weight: 600; color: #9a6700; background: #fff8ec;
+             border: 1px solid #f0cf9a; border-radius: 4px; padding: 1px 6px; margin-left: 7px;
+             vertical-align: middle; white-space: nowrap; }
+  .kpl-wrap { width: 100%; overflow-x: auto; padding: 0 14px 6px; box-sizing: border-box; }
+  .kpl-tbl { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+  .kpl-tbl th { text-align: right; padding: 5px 7px; font-size: 10px; font-weight: 600;
+                color: #8c959f; background: #f6f8fa; border-bottom: 1px solid #d0d7de;
+                white-space: nowrap; }
+  .kpl-tbl th.sortable { cursor: pointer; user-select: none; }
+  .kpl-tbl th.sortable:hover { color: #1f2328; background: #eaeef2; }
+  .kpl-tbl th.on { color: #0969da; }
+  .kpl-tbl th.on::after { content: "▼"; font-size: 8px; margin-left: 2px; }
+  .kpl-tbl th.on.asc::after { content: "▲"; }
+  .kpl-tbl th:nth-child(1), .kpl-tbl th:nth-child(2),
+  .kpl-tbl td:nth-child(1), .kpl-tbl td:nth-child(2) { text-align: left; }
+  .kpl-tbl td { text-align: right; padding: 5px 7px; border-bottom: 1px solid #f0f2f5;
+                font-family: "SF Mono", Menlo, monospace; color: #3d4148; white-space: nowrap; }
+  .kpl-tbl tbody tr.row { cursor: pointer; }
+  .kpl-tbl tbody tr.row:hover td { background: #f5f8fc; }
+  .kpl-tbl tr.open td { background: #fbfcfd; }
+  .kpl-rk { color: #8c959f; font-weight: 700; }
+  .kpl-rk.top { color: #cf222e; }
+  .kpl-nm { font-weight: 700; color: #1f2328; font-family: -apple-system, "PingFang SC", sans-serif; }
+  .kpl-nm .arr { color: #8c959f; font-size: 9px; margin-right: 4px; }
+  .kpl-tbl tr.open .kpl-nm .arr { color: #1f2328; }
+  .kpl-hot { font-size: 10px; margin-left: 4px; }
+  .kpl-delta { font-size: 10px; font-weight: 700; color: #cf222e; margin-left: 4px; }
+  .kpl-delta.dn { color: #1a7f37; }
+  .kpl-sq { display: inline-block; min-width: 15px; padding: 1px 5px; border-radius: 3px;
+            background: #cf222e; color: #fff; font-weight: 700; font-size: 11px; }
+  .kpl-sq.low { background: #f6b0b6; color: #7d0a1c; }
+  .kpl-st { font-weight: 700; }
+  .kpl-ap { font-size: 10px; font-weight: 700; color: #9a6700; margin-left: 3px; cursor: help; }
+  .kpl-st.hi { color: #cf222e; }
+  .kpl-kind { font-size: 9.5px; padding: 0 5px; border-radius: 3px; margin-left: 5px;
+              border: 1px solid #d0d7de; color: #8c959f;
+              font-family: -apple-system, "PingFang SC", sans-serif; }
+  .kpl-kind.concept { border-color: #b6d7f5; color: #0969da; background: #f0f7ff; }
+  .kpl-kind.rule, .kpl-kind.name { border-color: #f0cf9a; color: #9a6700; background: #fff8ec; }
+  .kpl-lb { display: inline-block; font-size: 10px; padding: 0 5px; margin-right: 4px;
+            border-radius: 3px; background: #eaeef2; color: #3d4148; font-weight: 700; }
+  .kpl-lb.hi { background: rgba(207,34,46,.12); color: #a40e26; }
+  .kpl-exp > td { padding: 0 !important; background: #fbfcfd;
+                  border-bottom: 1px solid #d0d7de !important; }
+  .kpl-more { text-align: center; padding: 8px 14px; font-size: 11.5px; color: #656d76; }
+  .kpl-more button { border: 1px solid #d0d7de; background: #fff; border-radius: 7px;
+                     padding: 5px 14px; font-size: 11.5px; color: #3d4148; cursor: pointer; }
+  .kpl-more button:hover { background: #f6f8fa; }
+
+  /* ③ 天梯 · 分层晋级率 */
+  .kpl-ladder { padding: 8px 14px 12px; display: flex; flex-direction: column; gap: 5px; }
+  .kpl-lad-row { display: flex; align-items: center; gap: 9px; font-size: 11.5px; }
+  .kpl-lad-lb { flex: none; width: 42px; text-align: center; font-weight: 700; font-size: 10.5px;
+                padding: 2px 0; border-radius: 4px; background: #eaeef2; color: #3d4148; }
+  .kpl-lad-lb.hi { background: rgba(207,34,46,.12); color: #a40e26; }
+  .kpl-lad-cnt { flex: none; width: 40px; font: 700 12px "SF Mono", Menlo, monospace; color: #cf222e; }
+  .kpl-lad-names { flex: 1 1 auto; min-width: 0; color: #3d4148; overflow: hidden;
+                   text-overflow: ellipsis; white-space: nowrap; }
+  .kpl-lad-rate { flex: none; font: 700 11px "SF Mono", Menlo, monospace; color: #0969da;
+                  background: #f0f7ff; border-radius: 4px; padding: 1px 7px; }
+  .kpl-lad-rate.na { color: #8c959f; background: #f6f8fa; }
 
   /* 市场宽度条 */
   .breadth-bar { display: flex; justify-content: space-between; align-items: center;
@@ -1484,48 +1565,66 @@
       <!-- ===== 区域 7：涨停池 ===== -->
       <section class="wb-section" data-section="zt" hidden data-page-node-id="CkA9xMvIiptL3Q7XVZ61Fn">
         <div class="panel" data-page-node-id="S2Z66e9wvQkM7mGKoumT0o">
-          <div class="panel-hd" data-page-node-id="h5w2AxWz6sht86SHjihCCa"><h3 data-page-node-id="dwW8FUww06gkCUJ7Qs5TOc">🏆 涨停情绪</h3><span class="refresh-note" id="zt-hint" data-page-node-id="Uvdvs6F8o5Ftha8E1pXhdn">加载中…</span></div>
-          <div class="stat-row" data-page-node-id="LnSYpRNhsHPHFmLTh8fKVk">
-            <div class="stat-card up" data-page-node-id="1CDaGAuO1gGtPRqFseqeLZ"><div class="num" id="stat-zt" data-page-node-id="thJ6RWO8UmrkYMcdZnMBL6">-</div><div class="lbl" data-page-node-id="uqkWZeDui9q6EOfBZA9Cny">涨停</div></div>
-            <div class="stat-card down" data-page-node-id="J3x1pyU8SscnP2mlF3X3oo"><div class="num" id="stat-dt" data-page-node-id="SmSyIwQkzXfo1njSROnIYn">-</div><div class="lbl" data-page-node-id="n7jfcD9AvshSpZs30CMwT9">跌停</div></div>
-            <div class="stat-card warn" data-page-node-id="FG6mDQh3fZ4cPMNw4F8HVU"><div class="num" id="stat-zb" data-page-node-id="Rbs89Tnthm4JQiFSdXktMv">-</div><div class="lbl" data-page-node-id="GBr0d30tUNVRpJeYNzZHwk">炸板</div></div>
-            <div class="stat-card hot" data-page-node-id="sWTXm0DNuoTvDpOOTQ2EAe"><div class="num" id="stat-lb" data-page-node-id="eJhQirnRDwOwqgG4BoejNU">-</div><div class="lbl" data-page-node-id="CCdUrJ0uzUWYkCnq2sw2Oh">最高连板</div></div>
+          <!-- ① 市场情绪计数条：开盘啦「tab 即数量对比」——竞价/涨停/炸板/跌停/自然涨停/昨涨停晋级 -->
+          <div class="panel-hd" data-page-node-id="h5w2AxWz6sht86SHjihCCa">
+            <h3 data-page-node-id="dwW8FUww06gkCUJ7Qs5TOc">🎭 市场情绪</h3>
+            <span class="refresh-note" id="zt-hint" data-page-node-id="Uvdvs6F8o5Ftha8E1pXhdn">加载中…</span>
           </div>
-          <div class="panel-hd" style="border-top:1px solid #d0d7de" data-page-node-id="p6ngWso6TDmytZloHWNIA3"><h3 data-page-node-id="lfgKklAUPQmIRZvni9ZFFO">🪜 连板天梯</h3><span class="refresh-note" data-page-node-id="uJM0ow5aZWTh3sWzaxezd1">≥2板</span></div>
-          <div class="ladder" id="ladder" data-page-node-id="LoKFZhIYLlV0CctGygmLPZ"></div>
-          <div class="panel-hd" style="border-top:1px solid #d0d7de" data-page-node-id="CHZgeuJ28BTUto6GL6bJTQ">
-            <h3 data-page-node-id="bbXD4ZfEwglzEYGotJ4rxJ">📊 板块涨停分布</h3>
+          <div class="kpl-emo" id="kpl-emo">
+            <div class="kpl-emo-cell"><b id="stat-zt">-</b><span>涨停</span></div>
+            <div class="kpl-emo-cell"><b id="stat-zb">-</b><span>炸板</span></div>
+            <div class="kpl-emo-cell"><b id="stat-dt">-</b><span>跌停</span></div>
+            <div class="kpl-emo-cell"><b id="stat-lb">-</b><span>最高连板</span></div>
+            <div class="kpl-emo-cell"><b id="stat-zha">-</b><span>炸板率</span></div>
+            <div class="kpl-emo-cell"><b id="stat-promote">-</b><span>昨涨停晋级</span></div>
+            <div class="kpl-emo-cell"><b id="stat-prevpct">-</b><span>昨涨停今均涨</span></div>
+          </div>
+          <div class="kpl-emo-note" id="kpl-emo-note"></div>
+
+          <!-- ② 板块强度榜：开盘啦「板块 · 历史统计」式密集可排序表格 -->
+          <div class="panel-hd sep" data-page-node-id="CHZgeuJ28BTUto6GL6bJTQ">
+            <h3 data-page-node-id="bbXD4ZfEwglzEYGotJ4rxJ">📊 板块强度榜 <span class="kpl-loc" title="开盘啦强度为私有算法无法复刻，本列为本地口径加权值">本地口径</span></h3>
             <div class="ztbg-tools">
               <input id="zt-search" placeholder="搜板块 / 个股" title="支持板块名、股票名、代码">
               <div class="seg" id="zt-dim-seg">
                 <button data-dim="theme" class="active">细分题材</button>
                 <button data-dim="industry">一级行业</button>
               </div>
-              <select id="zt-sort" title="板块排序">
-                <option value="count">涨停家数 ↓</option>
-                <option value="lianban">最高连板 ↓</option>
-                <option value="zdf">板块涨幅 ↓</option>
-                <option value="speed">板块涨速 ↓</option>
-              </select>
               <button class="btn active" id="zt-min2" title="过滤只有 1 只涨停的边缘题材">≥2家</button>
               <button class="btn" id="zt-toggle-all">全部展开</button>
             </div>
           </div>
           <div class="ztbg-status" id="zt-theme-status">板块数据加载中…</div>
-          <div class="zt-board-groups" id="zt-board-groups" data-page-node-id="9WhNknY7vq3rbG3Zjqk0g8">
-            <div class="empty-tip" style="padding:12px">加载中…</div>
+          <div class="kpl-wrap">
+            <table class="kpl-tbl" id="zt-tbl">
+              <thead><tr id="zt-thead"></tr></thead>
+              <tbody id="zt-strength-body">
+                <tr><td class="empty-tip" style="padding:12px">加载中…</td></tr>
+              </tbody>
+            </table>
           </div>
-          <!-- 2026-11-05：原「风险池」物理并入本 tab（同源 /api/dashboard，renderPools 一次渲染） -->
+          <div class="ztbg-more" id="zt-more"></div>
+
+          <!-- ③ 连板天梯 + 分层晋级率（开盘啦「涨停天梯」） -->
+          <div class="panel-hd sep" data-page-node-id="p6ngWso6TDmytZloHWNIA3">
+            <h3 data-page-node-id="lfgKklAUPQmIRZvni9ZFFO">🪜 连板天梯 · 晋级率</h3>
+            <span class="refresh-note" id="lb-hint" data-page-node-id="uJM0ow5aZWTh3sWzaxezd1">≥2板</span>
+          </div>
+          <div class="kpl-ladder" id="ladder" data-page-node-id="LoKFZhIYLlV0CctGygmLPZ"></div>
+
+          <!-- ④ 风险池：炸板 / 跌停（同源 /api/dashboard，renderPools 一次渲染） -->
           <div class="panel-hd sep"><h3>⚠️ 炸板池</h3><span class="refresh-note" id="zb-hint">加载中…</span></div>
           <div class="panel-section">
-            <table class="dtbl">
+            <table class="dtbl dtbl-risk">
+              <colgroup><col style="width:36%"><col style="width:18%"><col style="width:14%"><col style="width:32%"></colgroup>
               <thead><tr><th>股票</th><th>现涨%</th><th>炸板次</th><th>行业</th></tr></thead>
               <tbody id="tbl-zb"><tr><td colspan="4" class="empty-tip">加载中…</td></tr></tbody>
             </table>
           </div>
           <div class="panel-hd sep"><h3>💥 跌停池</h3></div>
           <div class="panel-section">
-            <table class="dtbl">
+            <table class="dtbl dtbl-risk">
+              <colgroup><col style="width:36%"><col style="width:18%"><col style="width:14%"><col style="width:32%"></colgroup>
               <thead><tr><th>股票</th><th>跌幅%</th><th>额亿</th><th>行业</th></tr></thead>
               <tbody id="tbl-dt"><tr><td colspan="4" class="empty-tip">加载中…</td></tr></tbody>
             </table>
@@ -2048,34 +2147,92 @@ function _updateSectorHead() {
   });
 }
 
-// ================= 涨停/风险池/异动 =================
+// ================= 涨停情绪 / 天梯 / 风险池（2026-11-06 开盘啦式改造） =================
+// 情绪：开盘啦「市场情绪」是 tab 即数量对比，这里做成一行等宽数字（涨停/炸板/跌停/
+//       最高连板/炸板率/昨涨停晋级/昨涨停今均涨），比四个大卡片信息密度高。
+// 天梯：连板天梯 + 分层晋级率（昨 N 板 → 今 N+1 板），没有再涨停就显示「晋级 --」。
+function _kplCell(id, val, cls) {
+  const el = $(id);
+  if (!el) return;
+  el.textContent = val;
+  const cell = el.parentElement;
+  if (cell) cell.className = 'kpl-emo-cell' + (cls ? ' ' + cls : '');
+}
+
 function renderPools(d) {
-  $("stat-zt").textContent = d.zt_count;
-  $("stat-dt").textContent = d.dt_count;
-  $("stat-zb").textContent = d.zb_count;
-  const maxLb = d.zt_pool.length ? Math.max(...d.zt_pool.map(s => s.lianban || 1)) : 0;
-  $("stat-lb").textContent = maxLb ? maxLb + "板" : "-";
-  // 连板天梯
-  const ladder = d.ladder || {};
-  const keys = Object.keys(ladder).sort((a, b) => b - a);
-  let lh = "";
-  if (!keys.length) lh = '<div class="c-dim" style="padding:10px">暂无连板股</div>';
-  keys.forEach(k => {
-    lh += `<div class="ladder-item">
-      <span class="lb-badge ${k >= 5 ? "high" : ""}">${k}板</span>
-      <span class="lb-names">${ladder[k].map(esc).join(" · ")}</span>
+  const pr = d.zt_promotion || {};
+  const zha = d.zt_zha_rate;
+  const maxLb = (d.zt_pool || []).length
+    ? Math.max(...d.zt_pool.map(s => s.lianban || 1)) : 0;
+
+  _kplCell('stat-zt', d.zt_count == null ? '-' : d.zt_count, 'up');
+  _kplCell('stat-zb', d.zb_count == null ? '-' : d.zb_count, 'warn');
+  _kplCell('stat-dt', d.dt_count == null ? '-' : d.dt_count, 'down');
+  _kplCell('stat-lb', maxLb ? maxLb + '板' : '-', 'info');
+  _kplCell('stat-zha', zha == null ? '--' : zha + '%', zha == null ? '' : (zha >= 35 ? 'warn' : ''));
+  _kplCell('stat-promote', pr.promote_rate == null ? '--' : pr.promote_rate + '%',
+    pr.promote_rate == null ? '' : 'info');
+  const avg = pr.prev_avg_pct;
+  _kplCell('stat-prevpct', avg == null ? '--' : ((avg > 0 ? '+' : '') + avg + '%'),
+    avg == null ? '' : (avg >= 0 ? 'up' : 'down'));
+
+  const note = $('kpl-emo-note');
+  if (note) {
+    const bits = [];
+    if (pr.prev_count) {
+      const sd = (d.prev_zt && d.prev_zt.source_date) || '--';
+      bits.push(`昨涨停基线 <b>${pr.prev_count}</b> 只（${esc(sd)}）→ 今日仍涨停 <b>${pr.promoted || 0}</b> 只`);
+    } else {
+      bits.push('<span class="warn">未取到昨日涨停基线，晋级率不可用（宁可不显示，不编造）</span>');
+    }
+    if (pr.prev_avg_pct != null) {
+      bits.push(`昨日涨停股今日均涨 <b>${avg > 0 ? '+' : ''}${avg}%</b> · 下跌占比 <b>${pr.prev_down_ratio}%</b>`);
+    }
+    bits.push('炸板率 = 炸板 ÷ (涨停 + 炸板) · 昨涨停晋级 = 今日再涨停 ÷ 昨日涨停总数');
+    note.innerHTML = bits.join(' · ');
+  }
+
+  // 连板天梯（用全量涨停池算家数，避免 d.ladder 只留前 8 个名字导致计数偏小）
+  const pool = d.zt_pool_all || d.zt_pool || [];
+  const lbMap = {};
+  pool.forEach(s => {
+    const k = s.lianban || 1;
+    (lbMap[k] = lbMap[k] || []).push(s.name || '');
+  });
+  const rateMap = {};
+  (pr.prev_ladder || []).forEach(x => { if (x.from != null) rateMap[x.to] = x; });
+  const lv = Object.keys(lbMap).map(Number).sort((a, b) => b - a);
+  let lh = '';
+  if (!lv.length) {
+    lh = '<div class="c-dim" style="padding:8px 0">暂无涨停 / 连板股</div>';
+  }
+  lv.forEach(k => {
+    const names = lbMap[k];
+    const r = rateMap[k];
+    lh += `<div class="kpl-lad-row">
+      <span class="kpl-lad-lb ${k >= 3 ? 'hi' : ''}">${k}板</span>
+      <span class="kpl-lad-cnt">${names.length}只</span>
+      <span class="kpl-lad-names" title="${esc(names.join(' · '))}">${names.slice(0, 10).map(esc).join(' · ')}${names.length > 10 ? ` …等 ${names.length} 只` : ''}</span>
+      ${k === 1
+        ? `<span class="kpl-lad-rate na" title="1 板即当天首次涨停（首板），没有上一层级可晋级">新首板</span>`
+        : (r
+          ? `<span class="kpl-lad-rate" title="昨日 ${r.from} 板 ${r.base} 只 → 今日晋级 ${r.hit} 只">晋级 ${r.rate}%</span>`
+          : `<span class="kpl-lad-rate na" title="${pr.prev_ladder_known ? '昨日没有该层级个股，无法计算晋级' : '昨日分层数据缺失（老缓存只存代码）'}">晋级 --</span>`)}
     </div>`;
   });
-  $("ladder").innerHTML = lh;
-  // 涨停池板块分组分布
-  $("zt-hint") && ($("zt-hint").textContent = `共${d.zt_count}家`);
+  $('ladder').innerHTML = lh;
+  const lhint = $('lb-hint');
+  if (lhint) lhint.textContent = `涨停 ${pool.length} 只 · ${lv.length} 个梯队`;
+
+  $('zt-hint') && ($('zt-hint').textContent = `共${d.zt_count}家`);
   renderZtBoardGroups(d);
-  const zbadge = $("zt-badge");
+  const zbadge = $('zt-badge');
   if (zbadge) { zbadge.textContent = d.zt_count; zbadge.className = 'badge' + (!d.zt_count ? ' zero' : ''); }
+
   // 炸板池
-  $("zb-hint").textContent = `共${d.zb_count}家`;
-  const tbz = $("tbl-zb");
-  let zh = "";
+  $('zb-hint').textContent = `共${d.zb_count}家`;
+  const tbz = $('tbl-zb');
+  let zh = '';
   (d.zb_pool || []).slice(0, 12).forEach(s => {
     zh += `<tr>
       <td class="name-cell">${esc(s.name)}</td>
@@ -2086,8 +2243,8 @@ function renderPools(d) {
   });
   tbz.innerHTML = zh || '<tr><td colspan="4" class="empty-tip">无炸板</td></tr>';
   // 跌停池
-  const tbd = $("tbl-dt");
-  let dh = "";
+  const tbd = $('tbl-dt');
+  let dh = '';
   (d.dt_pool || []).forEach(s => {
     dh += `<tr>
       <td class="name-cell">${esc(s.name)}</td>
@@ -2099,11 +2256,12 @@ function renderPools(d) {
   tbd.innerHTML = dh || '<tr><td colspan="4" class="empty-tip">无跌停</td></tr>';
 }
 
-// ================= 板块涨停分布 v2（2026-11-05） =================
+// ================= 板块强度榜（开盘啦「板块 · 历史统计」排版） =================
 // 维度：细分题材（东财概念成分股反向索引，一股可属多题材）/ 一级行业（东财原始字段）
-// 排序：默认涨停家数降序（用户要求「最多的板块放最前」）；卡片点击展开个股二级下钻。
+// 排版：密集可排序表格（列头点击排序，排序即筛选）+ 行点击展开成分股二级下钻。
+// 强度：本地口径 0-10000（zt_board_stat.py 加权），UI 上固定标「本地口径」，不冒充开盘啦官方值。
 let _ztDim = 'theme';
-let _ztSort = 'count';
+let _ztSort = { key: 'strength', dir: 'desc' };
 let _ztMin2 = true;        // 默认过滤只有 1 只涨停的边缘题材
 let _ztShowAll = false;    // 默认只显示前 20 个板块，避免长页面
 let _ztQuery = '';         // 板块名 / 个股名 / 代码 搜索
@@ -2112,153 +2270,238 @@ const _ztOpen = new Set();
 let _ztAutoOpen = false;
 let _ztLastData = null;
 
+const ZT_KIND_TXT = { concept: '概念', rule: '规则', name: '字辈', industry: '行业' };
+const ZT_COLS = [
+  { k: 'rank',     t: '<span title="# 为强度名次，不随排序改变；点列头只改显示顺序">#</span>', s: true, w: '34px' },
+  { k: 'name',     t: '板块',   s: true },
+  { k: 'strength', t: '<span title="本地口径：涨停家数34%/最高连板20%/涨幅18%/涨速12%/净额16% 加权到 0-10000，缺失维度剔除后重归一。非开盘啦官方数值">强度</span>', s: true, w: '62px' },
+  { k: 'count',    t: '涨停',   s: true, w: '54px' },
+  { k: 'lianban',  t: '梯队',   s: true },
+  { k: 'zdf',      t: '涨幅',   s: true, w: '66px' },
+  { k: 'speed',    t: '涨速',   s: true, w: '66px' },
+  { k: 'netflow',  t: '净额亿', s: true, w: '72px' },
+  { k: 'lead',     t: '领涨',   s: false },
+];
+
 function ztNormGroups(raw, dim) {
   return (raw || []).map(g => dim === 'industry' ? {
     name: g.industry, kind: 'industry', count: g.count, max_lianban: g.max_lianban,
     zdf: g.zdf, lead: g.lead, speed: g.speed, netflow_yi: g.netflow_yi,
+    strength: g.strength, rank: g.rank, rank_delta: g.rank_delta,
+    strength_prev: g.strength_prev, hot_streak: g.hot_streak,
+    board_name: g.board_name, board_match: g.board_match,
     stocks: g.stocks || []
   } : g);
 }
-const ZT_SORTS = {
-  count:   (a, b) => b.count - a.count || b.max_lianban - a.max_lianban,
-  lianban: (a, b) => b.max_lianban - a.max_lianban || b.count - a.count,
-  zdf:     (a, b) => (b.zdf ?? -999) - (a.zdf ?? -999) || b.count - a.count,
-  speed:   (a, b) => (b.speed ?? -999) - (a.speed ?? -999) || b.count - a.count,
-};
-const ZT_KIND_TXT = { concept: '概念', rule: '规则', name: '字辈', industry: '行业' };
 
-// 指标列随维度切换：题材维度给「涨跌家数 / 领涨涨幅」（东财概念榜真实字段），
-// 资金与涨速标注为「主行业近似」；行业维度给腾讯板块榜的原始净流入 / 涨速。
-function ztMetricsHtml(g, cls, pct, num) {
-  const base = `<span class="ztbg-m"><span class="l">最高连板</span><b>${g.max_lianban}板</b></span>`
-    + `<span class="ztbg-m ${cls(g.zdf)}"><span class="l">板块今日</span><b>${pct(g.zdf)}</b></span>`;
-  if (_ztDim === 'industry') {
-    return `<span class="ztbg-metrics">${base}`
-      + `<span class="ztbg-m ${cls(g.netflow_yi)} hide-sm"><span class="l">净流入亿</span><b>${num(g.netflow_yi, "")}</b></span>`
-      + `<span class="ztbg-m ${cls(g.speed)} hide-sm"><span class="l">涨速</span><b>${pct(g.speed)}</b></span>`
-      + `<span class="ztbg-m hide-sm"><span class="l">领涨</span><b style="font-size:11px">${g.lead ? esc(g.lead) : "--"}</b></span>`
-      + `</span>`;
+// 排序值；null 统一沉底（缺数据不该因为 asc/desc 翻转跑到最前）
+function ztSortVal(g, k) {
+  switch (k) {
+    case 'name': return g.name || '';
+    case 'strength': return g.strength == null ? null : g.strength;
+    case 'count': return g.count == null ? null : g.count;
+    case 'lianban': return g.max_lianban == null ? null : g.max_lianban;
+    case 'zdf': return g.zdf == null ? null : g.zdf;
+    case 'speed': return g.speed == null ? null : g.speed;
+    case 'netflow': return g.netflow_yi == null ? null : g.netflow_yi;
+    default: return null;
   }
-  const ratio = (g.up_count == null || g.down_count == null) ? "--" : `${g.up_count}/${g.down_count}`;
-  const lead = g.lead
-    ? esc(g.lead) + (g.lead_pct != null ? ` ${fmtPct(g.lead_pct)}` : '') : "--";
-  return `<span class="ztbg-metrics">${base}`
-    + `<span class="ztbg-m hide-sm"><span class="l">涨/跌家</span><b>${ratio}</b></span>`
-    + `<span class="ztbg-m hide-sm"><span class="l">领涨</span><b style="font-size:11px">${lead}</b></span>`
-    + `<span class="ztbg-m ${cls(g.netflow_yi)} hide-sm"><span class="l">主行业资金*</span><b>${num(g.netflow_yi, "")}</b></span>`
-    + `<span class="ztbg-m ${cls(g.speed)} hide-sm"><span class="l">主行业涨速*</span><b>${pct(g.speed)}</b></span>`
-    + `</span>`;
+}
+
+function _ztCmp(a, b) {
+  const k = _ztSort.key;
+  const dir = _ztSort.dir === 'asc' ? 1 : -1;
+  const av = ztSortVal(a, k), bv = ztSortVal(b, k);
+  if (k === 'name') return String(av).localeCompare(String(bv), 'zh-CN') * dir;
+  if (av == null && bv == null) return (b.count || 0) - (a.count || 0);
+  if (av == null) return 1;       // 缺值恒沉底
+  if (bv == null) return -1;
+  if (av === bv) return (b.count || 0) - (a.count || 0);
+  return (av - bv) * dir;
+}
+
+function _ztNum(v) { return (v == null || v === '') ? '--' : fmtNum(v, 1); }
+function _ztPct(v) { return (v == null || v === '') ? '--' : fmtPct(v); }
+function _ztCls(v) { return (v == null || v === '') ? '' : (v >= 0 ? 'c-up' : 'c-down'); }
+
+// 梯队小标签：4板×1 / 2板×3 / 1板×8
+function _ztLadderChips(g) {
+  const m = {};
+  (g.stocks || []).forEach(s => { const k = s.lianban || 1; m[k] = (m[k] || 0) + 1; });
+  const ks = Object.keys(m).map(Number).sort((a, b) => b - a);
+  if (!ks.length) return '<span class="c-dim">--</span>';
+  return ks.map(k => `<span class="kpl-lb ${k >= 3 ? 'hi' : ''}">${k}×${m[k]}</span>`).join('');
+}
+
+function _ztStockTable(g) {
+  const rows = (g.stocks || []).map(s => `
+    <tr>
+      <td class="nm">${esc(s.name || '')}<span class="cd">${esc(s.code || '')}</span></td>
+      <td class="li ${(s.lianban || 1) >= 3 ? 'h' : ''}">${(s.lianban || 1)}板</td>
+      <td class="${pctCls(s.pct)}">${fmtPct(s.pct)}</td>
+      <td>${s.fund_yi == null ? '--' : fmtNum(s.fund_yi, 2)}</td>
+      <td>${s.amount_yi == null ? '--' : fmtNum(s.amount_yi, 1)}</td>
+      <td>${fmtTime(s.first_time)}</td>
+      <td class="ind">${esc(s.industry || '--')}</td>
+    </tr>`).join('');
+  const proxy = g.proxy_industry
+    ? `<span class="c-dim"> · 资金 / 涨速取主行业「${esc(g.proxy_industry)}」近似（题材级无权威口径）</span>` : '';
+  return `<div style="padding:6px 10px 8px">
+    ${proxy ? `<div class="ztbg-ladder" style="border:0;background:transparent;padding:0 0 5px">口径说明${proxy}</div>` : ''}
+    <table class="ztbg-tbl">
+      <thead><tr><th>股票</th><th>连板</th><th>涨幅</th><th>封板资金亿</th><th>额亿</th><th>首封</th><th>所属行业</th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="7" class="empty-tip">无成分股</td></tr>'}</tbody>
+    </table>
+  </div>`;
+}
+
+function _renderZtHead() {
+  const tr = $('zt-thead');
+  if (!tr) return;
+  const proxy = _ztDim === 'theme';
+  tr.innerHTML = ZT_COLS.map(c => {
+    let t = c.t;
+    if (proxy && (c.k === 'speed' || c.k === 'netflow')) {
+      t += '<span title="题材级没有权威资金口径，取成分股主行业的腾讯板块榜数据近似">*</span>';
+    }
+    const on = _ztSort.key === c.k;
+    const cls = (c.s ? 'sortable' : '') + (on ? ' on' : '') + (on && _ztSort.dir === 'asc' ? ' asc' : '');
+    return `<th class="${cls}" ${c.s ? `data-sort="${c.k}"` : ''} ${c.w ? `style="width:${c.w}"` : ''}>${t}</th>`;
+  }).join('');
 }
 
 function renderZtBoardGroups(d) {
-  const wrap = $("zt-board-groups");
-  if (!wrap || !d) return;
+  if (!d) return;
   _ztLastData = d;
+  _renderZtHead();
   const raw = _ztDim === 'industry' ? d.zt_board_groups : d.zt_theme_groups;
-  const all = ztNormGroups(raw, _ztDim).slice().sort(ZT_SORTS[_ztSort] || ZT_SORTS.count);
+  const all = ztNormGroups(raw, _ztDim).slice().sort(_ztCmp);
   const q = (_ztQuery || '').trim().toLowerCase();
-  const pool = all.filter(g => (q || !_ztMin2 || g.count >= 2)
-    && (!q || g.name.toLowerCase().indexOf(q) >= 0
-             || (g.stocks || []).some(s =>
-                  (s.name || '').toLowerCase().indexOf(q) >= 0
-                  || (s.code || '').indexOf(q) >= 0)));
+  const pool = all.filter(g => (q || !_ztMin2 || (g.count || 0) >= 2)
+    && (!q || String(g.name || '').toLowerCase().indexOf(q) >= 0
+      || (g.stocks || []).some(s =>
+        (s.name || '').toLowerCase().indexOf(q) >= 0
+        || (s.code || '').indexOf(q) >= 0)));
   const list = _ztShowAll ? pool : pool.slice(0, ZT_PAGE);
 
   // 数据源状态说明（诚实标注：索引未就绪时明确告知是行业兜底，不伪装成细分题材）
   const st = d.theme_status || {};
-  const status = $("zt-theme-status");
+  const status = $('zt-theme-status');
   if (status) {
+    const sm = d.zt_strength_meta || {};
     if (_ztDim === 'theme') {
-      status.innerHTML = st.state === 'ready'
+      status.innerHTML = (st.state === 'ready'
         ? `数据源：东财概念成分股 · <b>${st.theme_count} 个细分题材就绪（${esc(st.built_at || '')}）</b>`
           + ` · 一股可属多个题材，故各板块家数之和大于涨停总数 · 共 ${all.length} 个板块 / ${d.zt_count || 0} 只涨停`
-          + ` · <span class="warn">*</span> 资金/涨速按成分股主行业近似（题材级无权威口径）`
         : `<span class="warn">细分题材索引${st.state === 'building' ? '构建中' : '暂不可用'}，当前为行业兜底</span>`
-          + (st.err ? ` · ${esc(st.err)}` : '') + ' · 后台会自动重试';
+          + (st.err ? ` · ${esc(st.err)}` : '') + ' · 后台会自动重试')
+        + ` · <b title="${esc(sm.note || '')}">强度：本地口径</b>`;
     } else {
       status.innerHTML = `数据源：东财一级行业 · 共 ${all.length} 个板块 / ${d.zt_count || 0} 只涨停`
-        + ` · 净流入 / 涨速来自腾讯板块榜（行业名映射）`;
+        + ` · 净额 / 涨速来自腾讯板块榜（实测 ${(d.zt_strength_meta && d.zt_strength_meta.board_total) || 151} 条行业+概念榜，`
+        + `东财行业名对不上时按近似映射，带 <span class="kpl-ap">~</span> 的行表示该行行情取自另一个腾讯板块）`
+        + ` · <b title="${esc(sm.note || '')}">强度：本地口径</b>`;
+    }
+    if (sm.has_history === false) {
+      status.innerHTML += '<br><span class="warn">名次变化需至少两档历史（5 分钟一档），首档不显示 ↑↓ 箭头</span>';
     }
   }
 
+  const body = $('zt-strength-body');
+  if (!body) return;
   if (!list.length) {
-    wrap.innerHTML = `<div class="empty-tip" style="padding:12px">`
+    body.innerHTML = `<tr><td colspan="${ZT_COLS.length}" class="empty-tip" style="padding:12px">`
       + (q ? `没有匹配「${esc(_ztQuery)}」的板块或个股` : '当前筛选下暂无涨停板块数据')
-      + `</div>`;
-    return;
+      + '</td></tr>';
+  } else {
+    // 首次（或切维度后）自动展开前 3 个板块，其余折叠，页面不再被个股明细撑爆
+    if (!_ztAutoOpen) {
+      _ztOpen.clear();
+      list.slice(0, 3).forEach(g => _ztOpen.add(g.name));
+      _ztAutoOpen = true;
+    }
+    let h = '';
+    list.forEach((g, i) => {
+      const open = _ztOpen.has(g.name);
+      const kind = g.kind || 'concept';
+      const kindTxt = ZT_KIND_TXT[kind] || kind;
+      // 板块名本身已以「概念」结尾时不重复挂标签（避免「光伏概念 概念」）
+      const kindHtml = (kind === 'concept' && /概念$/.test(g.name || ''))
+        ? '' : `<span class="kpl-kind ${kind}">${kindTxt}</span>`;
+      // 东财行业名与腾讯板块名不一一对应时，行情是近似映射 → 标 ~ 并给悬浮说明
+      // 仅在行业维度标 ~：题材维度的行情本身就是「主行业近似」，表头已用 * 说明，不重复标
+      const approx = (_ztDim === 'industry' && g.board_match && g.board_match !== 'exact')
+        ? `<span class="kpl-ap" title="近似匹配腾讯板块「${esc(g.board_name || '未匹配')}」：东财行业名与腾讯板块名不一一对应，涨幅/涨速/净额/领涨来自该腾讯板块">~</span>`
+        : '';
+      const dl = g.rank_delta;
+      const dtxt = dl == null ? ''
+        : (dl > 0 ? `<span class="kpl-delta" title="较上一档（5 分钟）名次上升">▲${dl}</span>`
+          : (dl < 0 ? `<span class="kpl-delta dn" title="较上一档（5 分钟）名次下降">▼${-dl}</span>` : ''));
+      const hot = g.hot_streak
+        ? '<span class="kpl-hot" title="持续火爆：连续两档强度≥6000，或 ≥3 家涨停且最高 ≥3 板">🔥</span>' : '';
+      const cnt = g.count || 0;
+      // 领涨取「本板块涨停池里最强的那只」，不是腾讯板块榜的领涨股 ——
+      // 后者在近似映射下会出现「电力」行挂光伏股，属于张冠李戴。
+      const leadStock = (g.stocks || [])[0];
+      const lead = leadStock
+        ? `${esc(leadStock.name || '')} <span class="c-dim">${leadStock.lianban || 1}板</span>`
+        : '--';
+      const leadTitle = g.lead
+        ? ` title="腾讯板块「${esc(g.board_name || '')}」领涨：${esc(g.lead)}${g.lead_pct != null ? ' ' + fmtPct(g.lead_pct) : ''}"`
+        : '';
+      h += `<tr class="row ${open ? 'open' : ''}" data-ztname="${esc(g.name)}">
+        <td class="kpl-rk ${i < 3 ? 'top' : ''}">${g.rank || i + 1}</td>
+        <td><span class="kpl-nm"><span class="arr">${open ? '▾' : '▸'}</span>${esc(g.name)}</span>${kindHtml}${approx}${hot}${dtxt}</td>
+        <td><span class="kpl-st ${(g.strength || 0) >= 6000 ? 'hi' : ''}">${g.strength == null ? '--' : g.strength}</span></td>
+        <td><span class="kpl-sq ${cnt >= 3 ? '' : 'low'}">${cnt}</span></td>
+        <td>${_ztLadderChips(g)}</td>
+        <td class="${_ztCls(g.zdf)}">${_ztPct(g.zdf)}</td>
+        <td class="${_ztCls(g.speed)}">${_ztPct(g.speed)}</td>
+        <td class="${_ztCls(g.netflow_yi)}">${_ztNum(g.netflow_yi)}</td>
+        <td style="text-align:left;font-family:inherit;font-size:11px"${leadTitle}>${lead}</td>
+      </tr>`;
+      if (open) {
+        h += `<tr class="kpl-exp"><td colspan="${ZT_COLS.length}">${_ztStockTable(g)}</td></tr>`;
+      }
+    });
+    body.innerHTML = h;
   }
-  // 首次（或切维度后）自动展开前 3 个板块，其余折叠，页面不再被个股明细撑爆
-  if (!_ztAutoOpen) {
-    _ztOpen.clear();
-    list.slice(0, 3).forEach(g => _ztOpen.add(g.name));
-    _ztAutoOpen = true;
-  }
-  const num = (v, unit) => (v === null || v === undefined || v === '') ? "--" : fmtNum(v, 1) + (unit || "");
-  const pct = (v) => (v === null || v === undefined || v === '') ? "--" : fmtPct(v);
-  const cls = (v) => (v === null || v === undefined || v === '') ? "" : (v >= 0 ? "up" : "down");
 
-  let h = "";
-  list.forEach((g, i) => {
-    const key = g.name;
-    const open = _ztOpen.has(key);
-    const kind = g.kind || 'concept';
-    // 梯队分布：4板×1 / 2板×3 / 1板×8 —— 一眼看出板块有没有高度
-    const ladders = {};
-    (g.stocks || []).forEach(s => { const k = s.lianban || 1; ladders[k] = (ladders[k] || 0) + 1; });
-    const ladderHtml = Object.keys(ladders).sort((a, b) => b - a).map(k =>
-      `<span class="lb ${k >= 3 ? 'hi' : ''}">${k}板 ×${ladders[k]}</span>`).join('');
-    const rows = (g.stocks || []).map(s => `
-      <tr>
-        <td class="nm">${esc(s.name || "")}<span class="cd">${esc(s.code || "")}</span></td>
-        <td class="li ${(s.lianban || 1) >= 3 ? "h" : ""}">${(s.lianban || 1)}板</td>
-        <td class="${pctCls(s.pct)}">${fmtPct(s.pct)}</td>
-        <td>${s.fund_yi == null ? "--" : fmtNum(s.fund_yi, 2)}</td>
-        <td>${num(s.amount_yi, "")}</td>
-        <td>${fmtTime(s.first_time)}</td>
-        <td class="ind">${esc(s.industry || "--")}</td>
-      </tr>`).join("");
-    h += `<div class="ztbg-card ${open ? 'open' : ''}">
-      <div class="ztbg-hd" data-ztname="${esc(key)}" title="点击${open ? '收起' : '展开'}成分股">
-        <span class="ztbg-arrow">▾</span>
-        <span class="ztbg-rank">#${i + 1}</span>
-        <span class="ztbg-name">${esc(key)}</span>
-        <span class="ztbg-kind ${kind}">${ZT_KIND_TXT[kind] || kind}</span>
-        <span class="ztbg-cnt">${g.count}家</span>
-        ${ztMetricsHtml(g, cls, pct, num)}
-      </div>
-      <div class="ztbg-body">
-        <div class="ztbg-ladder">梯队 ${ladderHtml || '<span class="lb">--</span>'}</div>
-        <table class="ztbg-tbl">
-          <thead><tr><th>股票</th><th>连板</th><th>涨幅</th><th>封板资金亿</th><th>额亿</th><th>首封</th><th>所属行业</th></tr></thead>
-          <tbody>${rows || '<tr><td colspan="7" class="empty-tip">无成分股</td></tr>'}</tbody>
-        </table>
-      </div>
-    </div>`;
-  });
-  if (!_ztShowAll && pool.length > ZT_PAGE) {
-    h += `<div class="ztbg-more">已显示前 ${list.length} / ${pool.length} 个板块 · `
-       + `<button data-ztmore="1">显示其余 ${pool.length - list.length} 个板块</button></div>`;
-  } else if (_ztShowAll && pool.length > ZT_PAGE) {
-    h += `<div class="ztbg-more"><button data-ztmore="0">收起，只看前 ${ZT_PAGE} 个</button></div>`;
+  const more = $('zt-more');
+  if (more) {
+    if (!_ztShowAll && pool.length > ZT_PAGE) {
+      more.innerHTML = `已显示前 ${list.length} / ${pool.length} 个板块 · `
+        + `<button data-ztmore="1">显示其余 ${pool.length - list.length} 个板块</button>`;
+    } else if (_ztShowAll && pool.length > ZT_PAGE) {
+      more.innerHTML = `<button data-ztmore="0">收起，只看前 ${ZT_PAGE} 个</button>`;
+    } else {
+      more.innerHTML = '';
+    }
   }
-  wrap.innerHTML = h;
 
-  // 事件委托只绑一次（innerHTML 每次轮询会重建，委托在容器上才不会丢）
-  if (!wrap._ztBound) {
-    wrap._ztBound = true;
-    wrap.addEventListener('click', e => {
-      const more = e.target.closest('[data-ztmore]');
-      if (more) { _ztShowAll = more.dataset.ztmore === '1'; renderZtBoardGroups(_ztLastData); return; }
-      const hd = e.target.closest('.ztbg-hd');
-      if (!hd) return;
-      const nm = hd.dataset.ztname;
+  // 事件委托：innerHTML 每次轮询会重建，只有委托在容器上才不会丢
+  if (!body._ztBound) {
+    body._ztBound = true;
+    body.addEventListener('click', e => {
+      const tr = e.target.closest('tr.row');
+      if (!tr) return;
+      const nm = tr.dataset.ztname;
       if (_ztOpen.has(nm)) _ztOpen.delete(nm); else _ztOpen.add(nm);
+      renderZtBoardGroups(_ztLastData);
+    });
+  }
+  if (more && !more._ztBound) {
+    more._ztBound = true;
+    more.addEventListener('click', e => {
+      const b = e.target.closest('[data-ztmore]');
+      if (!b) return;
+      _ztShowAll = b.dataset.ztmore === '1';
       renderZtBoardGroups(_ztLastData);
     });
   }
 }
 
-// 维度 / 排序 / 展开控件（DOM 在本脚本之前已存在）
+// 维度 / 排序 / 搜索 / 展开控件（DOM 在本脚本之前已存在）
 (function bindZtTools() {
   document.querySelectorAll('#zt-dim-seg button').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -2270,18 +2513,26 @@ function renderZtBoardGroups(d) {
       renderZtBoardGroups(_ztLastData);
     });
   });
-  const sel = $("zt-sort");
-  if (sel) sel.addEventListener('change', () => {
-    _ztSort = sel.value;
+  // 列头点击排序（开盘啦「排序即筛选」）：点同一列切升降序，换列默认降序
+  const thead = $('zt-thead');
+  if (thead) thead.addEventListener('click', e => {
+    const th = e.target.closest('th[data-sort]');
+    if (!th) return;
+    const k = th.dataset.sort;
+    if (_ztSort.key === k) {
+      _ztSort.dir = _ztSort.dir === 'desc' ? 'asc' : 'desc';
+    } else {
+      _ztSort = { key: k, dir: 'desc' };
+    }
     renderZtBoardGroups(_ztLastData);
   });
-  const search = $("zt-search");
+  const search = $('zt-search');
   if (search) search.addEventListener('input', () => {
     _ztQuery = search.value;
     _ztShowAll = !!_ztQuery.trim();   // 搜索时取消分页，直接给全量结果
     renderZtBoardGroups(_ztLastData);
   });
-  const min2 = $("zt-min2");
+  const min2 = $('zt-min2');
   if (min2) min2.addEventListener('click', () => {
     _ztMin2 = !_ztMin2;
     min2.classList.toggle('active', _ztMin2);
@@ -2289,12 +2540,12 @@ function renderZtBoardGroups(d) {
     _ztAutoOpen = false;
     renderZtBoardGroups(_ztLastData);
   });
-  const all = $("zt-toggle-all");
+  const all = $('zt-toggle-all');
   if (all) all.addEventListener('click', () => {
     const raw = _ztLastData ? (_ztDim === 'industry' ? _ztLastData.zt_board_groups : _ztLastData.zt_theme_groups) : [];
     const list = ztNormGroups(raw, _ztDim)
-      .filter(g => !_ztMin2 || g.count >= 2)
-      .sort(ZT_SORTS[_ztSort] || ZT_SORTS.count)
+      .filter(g => !_ztMin2 || (g.count || 0) >= 2)
+      .sort(_ztCmp)
       .slice(0, _ztShowAll ? 9999 : ZT_PAGE);
     const expand = _ztOpen.size < list.length;
     _ztOpen.clear();
