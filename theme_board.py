@@ -55,6 +55,7 @@ class ThemeBoard:
     def __init__(self):
         self._lock = threading.RLock()
         self._by_code = {}       # "600000" -> ["商业航天", "卫星互联网", ...]
+        self._by_theme = {}      # 2026-11-05 v2：题材名 -> set(代码)，供低位挖掘正向取成分股
         self._meta = {}          # 题材名 -> {zdf, lead, lead_pct, up_count, down_count, rank}
         self._built_at = 0.0
         self._state = "init"     # init / building / ready / degraded
@@ -73,6 +74,12 @@ class ThemeBoard:
             with self._lock:
                 self._by_code = d.get("by_code") or {}
                 self._meta = d.get("meta") or {}
+                # 兼容旧缓存（没有 by_theme 字段）：从反向索引即时重建
+                self._by_theme = {k: set(v) for k, v in (d.get("by_theme") or {}).items()}
+                if not self._by_theme and self._by_code:
+                    for _c, _ts in self._by_code.items():
+                        for _t in _ts:
+                            self._by_theme.setdefault(_t, set()).add(_c)
                 self._built_at = float(d.get("built_at") or 0)
                 self._concept_total = int(d.get("concept_total") or 0)
                 self._state = "ready" if self._by_code else "init"
@@ -81,7 +88,7 @@ class ThemeBoard:
         except Exception as e:
             print(f"[theme] 读缓存失败（将重建）: {type(e).__name__}: {e}")
 
-    def _save_cache(self, by_code, meta, concept_total):
+    def _save_cache(self, by_code, by_theme, meta, concept_total):
         try:
             CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
             tmp = CACHE_FILE.with_suffix(".json.tmp")
@@ -90,6 +97,7 @@ class ThemeBoard:
                 "date": datetime.now().strftime("%Y%m%d"),
                 "concept_total": concept_total,
                 "by_code": by_code,
+                "by_theme": {k: sorted(v) for k, v in by_theme.items()},
                 "meta": meta,
             }, ensure_ascii=False), encoding="utf-8")
             tmp.replace(CACHE_FILE)
@@ -171,21 +179,22 @@ class ThemeBoard:
             if not results:
                 raise RuntimeError("所有概念成分股均拉取失败")
 
-            by_code, meta = {}, {}
+            by_code, by_theme, meta = {}, {}, {}
             for nm, (codes, m) in results.items():
                 meta[nm] = m
+                by_theme[nm] = set(codes)
                 for c in codes:
                     by_code.setdefault(c, []).append(nm)
             for c in by_code:
                 by_code[c].sort(key=lambda n: meta.get(n, {}).get("rank", 9999))
 
             with self._lock:
-                self._by_code, self._meta = by_code, meta
+                self._by_code, self._by_theme, self._meta = by_code, by_theme, meta
                 self._built_at = time.time()
                 self._concept_total = len(results)
                 self._state = "ready"
                 self._err = ""
-            self._save_cache(by_code, meta, len(results))
+            self._save_cache(by_code, by_theme, meta, len(results))
             print(f"[theme] 索引构建完成: {len(results)} 题材 / {len(by_code)} 只成分股 / "
                   f"{time.time() - t0:.1f}s")
             return True
@@ -217,6 +226,20 @@ class ThemeBoard:
     def themes_for(self, code):
         with self._lock:
             return list(self._by_code.get(_norm(code), ()))
+
+    def codes_for(self, name):
+        """正向取某题材的全部成分股代码（L1 低位挖掘用）。
+
+        题材名可能是合并后的别名（如「光模块·CPO」），此时把映射到它的
+        原始概念成分股取并集，避免别名合并后成分股丢失。
+        """
+        alias = getattr(config, "ZT_THEME_ALIASES", {})
+        with self._lock:
+            names = [name] + [k for k, v in alias.items() if v == name]
+            out = set()
+            for nm in names:
+                out |= self._by_theme.get(nm, set())
+            return sorted(out)
 
     def meta(self, name):
         with self._lock:

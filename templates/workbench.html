@@ -4,6 +4,19 @@
 <meta charset="UTF-8" data-page-node-id="A1AYNyhfmiY5wN7ESfJIhl">
 <meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="7pD9YcQN8KMCBHR47HCryx">
 <title>我的工作台 · 实时持仓</title>
+<script>
+  // 体检 P3-2：LAN 首访 ?k= 由服务端种下 wb_k cookie 后，立刻把密钥从地址栏抹掉，
+  // 避免留在浏览器历史 / 分享链接 / 截图里。cookie 已在同一次响应中写入，清 URL 不影响后续访问。
+  (function () {
+    try {
+      var u = new URL(location.href);
+      if (u.searchParams.has('k')) {
+        u.searchParams.delete('k');
+        history.replaceState(null, '', u.pathname + (u.search || '') + (u.hash || ''));
+      }
+    } catch (e) { console.warn('[url-key] 清理失败', e); }
+  })();
+</script>
 <link rel="icon" href="data:," data-page-node-id="j30zn4bNTj33tCk8DIAbI5">
 <link rel="stylesheet" href="/static/style.css" data-page-node-id="OXWsQlnKAtdwBDEWaXZ2vm">
 <style>
@@ -841,6 +854,57 @@
   .mini-btn { font-size: 11px; padding: 2px 9px; border: 1px solid #d0d7de; border-radius: 6px;
     background: #f6f8fa; color: #1f2328; cursor: pointer; }
   .mini-btn:hover { background: #eaeef2; }
+  /* ===== 首板推票 v2（L0/L1/L2）===== */
+  .sp-card-fb .hd { display: flex; align-items: center; gap: 8px; }
+  .fb-l2-tip { font-size: 11px; font-weight: 400; color: #9a6700; }
+  .sp-fb-status { padding: 5px 10px; font-size: 11px; color: #57606a;
+                  border-bottom: 1px solid #f0d9a8; }
+  .fb-watch { padding: 6px 10px; font-size: 11px; color: #57606a;
+              border-top: 1px solid #f0d9a8; line-height: 1.6; }
+  .fb-v2 { margin-top: 12px; border: 1px solid #d0d7de; border-radius: 8px;
+           background: #fff; width: 100%; }
+  .fb-v2-hd { display: flex; justify-content: space-between; align-items: center;
+              padding: 8px 12px; border-bottom: 1px solid #d0d7de; }
+  .fb-v2-hd h3 { margin: 0; font-size: 13px; }
+  .fb-v2-ctrl { display: flex; align-items: center; gap: 8px; }
+  .fb-v2-status { padding: 6px 12px; font-size: 11px; color: #57606a;
+                  background: #f6f8fa; border-bottom: 1px solid #eaeef2; line-height: 1.6; }
+  .fb-v2-grid { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+  .fb-v2-card { min-width: 0; border-right: 1px solid #eaeef2; }
+  .fb-v2-card:last-child { border-right: 0; }
+  .fb-v2-card .hd { padding: 7px 12px; font-size: 12px; font-weight: 700;
+                    background: #f6f8fa; border-bottom: 1px solid #eaeef2; }
+  .fb-v2-list { max-height: 330px; overflow: auto; }
+  .fb-v2-news { padding: 7px 12px; font-size: 11px; color: #57606a;
+                border-top: 1px solid #eaeef2; line-height: 1.7; }
+  .fb-line { display: grid; align-items: center; gap: 6px; padding: 5px 10px;
+             border-bottom: 1px solid #eaeef2; font-size: 12px; }
+  .fb-line:hover { background: #f6f8fa; }
+  .fb-line.hd2 { background: #f6f8fa; color: #57606a; font-size: 11px; font-weight: 600; }
+  .fb-line .nm { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fb-line .cd { color: #8c959f; font-size: 10.5px; font-weight: 400; margin-left: 5px; }
+  .fb-score { font-weight: 700; color: #9a6700; }
+  .fb-score.hot { color: #cf222e; }
+  .fb-bar { height: 5px; background: #eaeef2; border-radius: 3px; overflow: hidden; }
+  .fb-bar i { display: block; height: 100%; background: #bf8700; }
+  .fb-tag { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10.5px;
+            background: #eaeef2; color: #57606a; white-space: nowrap; }
+  .fb-tag.hot { background: #ffebe9; color: #cf222e; }
+  .fb-empty { padding: 14px 10px; font-size: 11.5px; color: #8c959f; text-align: center; }
+  @media (max-width: 950px) { .fb-v2-grid { grid-template-columns: 1fr; } }
+  /* 派单诊断（时段建议页） */
+  .adv-diag { margin: 8px 12px 10px; padding: 8px 10px; border: 1px solid #d0d7de;
+              border-radius: 8px; background: #fff; font-size: 11.5px;
+              width: calc(100% - 24px); }
+  .adv-diag .dh { font-weight: 700; font-size: 12px; margin-bottom: 5px; }
+  .adv-diag .dr { display: grid; grid-template-columns: 62px 100px 1fr; gap: 6px;
+                  padding: 3px 0; border-bottom: 1px solid #eaeef2; line-height: 1.5; }
+  .adv-diag .dr:last-of-type { border-bottom: 0; }
+  .adv-diag .st { font-weight: 600; }
+  .adv-diag .st.dispatched { color: #1a7f37; }
+  .adv-diag .st.gate_temp { color: #0969da; }
+  .adv-diag .st.empty_pool { color: #9a6700; }
+  .adv-diag .hint { margin-top: 6px; color: #57606a; line-height: 1.6; }
   /* 右下角弹窗提醒 */
   #sprite-toasts { position: fixed; right: 16px; bottom: 16px; z-index: 1200;
                    display: flex; flex-direction: column; gap: 8px;
@@ -1030,6 +1094,7 @@
             <div class="progress" id="adv-progress" data-page-node-id="9Bd9MNZCiXNbtSyyHS18RB"></div>
           </div>
           <div class="adv-live-tip" id="adv-live-tip" data-page-node-id="EnoZntB1oHTMOQmpNDsTGe"></div>
+          <div class="adv-diag" id="adv-dispatch-diag">派单诊断加载中…</div>
           <div class="adv-stack" data-page-node-id="rkHUjC6bbRwduUmGa8EI73">
             <div class="adv-block" data-block="strong" data-page-node-id="FaEpmjeNcxNv0rtLtqPG7w">
               <div class="sub-hd" data-page-node-id="05TO1KkAQySE1vM4M4stjt">
@@ -1219,8 +1284,11 @@
           </div>
           <div class="sp-grid" data-page-node-id="spGrid01">
             <div class="sp-card sp-card-fb" data-page-node-id="spCardFB">
-              <div class="hd">🎯 首板雷达 <span class="n" id="sp-fb-n">--</span></div>
+              <div class="hd">🎯 临板首板 · L2 <span class="n" id="sp-fb-n">--</span>
+                <span class="fb-l2-tip">当天第一次涨停 · 即将涨停 · 封板意愿特别强</span></div>
+              <div class="sp-fb-status" id="sp-fb-status">加载中…</div>
               <div class="sp-list" id="sp-fb"></div>
+              <div class="fb-watch" id="sp-fb-watch"></div>
             </div>
             <div class="sp-card" data-page-node-id="spCard01">
               <div class="hd">🚀 极速拉升 <span class="n" id="sp-rocket-n">--</span></div>
@@ -1238,6 +1306,28 @@
               <div class="hd">🏆 涨停 · 炸板 <span class="n" id="sp-zt-n">--</span></div>
               <div class="sp-list" id="sp-zt"></div>
             </div>
+          </div>
+          <!-- ===== 首板推票 v2：L0 趋势题材 → L1 低位挖掘 ===== -->
+          <div class="fb-v2" data-page-node-id="fbV2">
+            <div class="fb-v2-hd">
+              <h3>🧭 题材趋势 · 低位挖掘 <span class="c-dim">L0 定方向 → L1 找即将冒头</span></h3>
+              <div class="fb-v2-ctrl">
+                <span class="refresh-note" id="fb-pick-note">加载中…</span>
+                <button class="mini-btn" id="fb-pick-refresh" title="强制重算（默认 30 秒缓存）">刷新</button>
+              </div>
+            </div>
+            <div class="fb-v2-status" id="fb-pick-status">加载中…</div>
+            <div class="fb-v2-grid">
+              <div class="fb-v2-card">
+                <div class="hd">📈 趋势题材榜 <span class="n" id="fb-trend-n">--</span></div>
+                <div class="fb-v2-list" id="fb-trends"></div>
+              </div>
+              <div class="fb-v2-card">
+                <div class="hd">🔍 低位挖掘观察池 <span class="n" id="fb-dig-n">--</span></div>
+                <div class="fb-v2-list" id="fb-digs"></div>
+              </div>
+            </div>
+            <div class="fb-v2-news" id="fb-news"></div>
           </div>
           <div class="sp-src" id="sp-src" data-page-node-id="spSrc01"></div>
           <div class="panel-hd" style="border-top:1px solid #d0d7de;margin-top:10px" data-page-node-id="spHd02">
@@ -2478,7 +2568,7 @@ function spInit() {
     toast('提醒范围：' + e.target.selectedOptions[0].textContent);
   };
   // 点击榜单行 / 事件行 → 加入自选股池（事件委托，避免内联引号转义问题）
-  ['sp-rocket', 'sp-speed', 'sp-board', 'sp-zt', 'sp-ev-body'].forEach(id => {
+  ['sp-rocket', 'sp-speed', 'sp-board', 'sp-zt', 'sp-ev-body', 'sp-fb', 'fb-digs'].forEach(id => {
     const el = $(id);
     if (!el) return;
     el.addEventListener('click', ev => {
@@ -2558,9 +2648,10 @@ function spMaybeVoice(e, lvlMax) {
   }
   _spLastVoice = now;
   _spVoiceCode[key] = now;
+  // v2：语音只播 L2 临板首板，文案由后端带（含距涨停 / 封板意愿 / 关键因子），
+  // 不再用 v1 的「三分钟涨速 + 均线多头」早段异动话术。
   const txt = isFb
-    ? `首板预警，${e.name || ''}，现价${(e.price || 0).toFixed(2)}元，涨${(e.pct || 0).toFixed(1)}%，`
-      + `放量约${e.vol_pct || 0}%，三分钟涨速${(e.sp || 0).toFixed(1)}%，突破前高，均线多头，建议重点关注`
+    ? (e.voice || `首板临门，${e.name || ''}，涨${(e.pct || 0).toFixed(1)}%，封板意愿${e.intent || 0}分，注意打板风险`)
     : `${e.label}，${e.name || ''}，${e.pct != null ? '涨' + e.pct.toFixed(1) + '%' : ''}`;
   spSpeak(txt);
 }
@@ -2802,12 +2893,11 @@ function renderSprite(d) {
   spRows($('sp-speed'), b.speed || [], 'stock');
   spRows($('sp-board'), mer, 'board');
   spRows($('sp-zt'), b.limit_up || [], 'zt');
-  spRows($('sp-fb'), b.first_board || [], 'stock');
+  renderFbL2(d);
   $('sp-rocket-n').textContent = (b.rocket || []).length + ' 只';
   $('sp-speed-n').textContent = (b.speed || []).length + ' 只';
   $('sp-board-n').textContent = mer.length + ' 个';
   $('sp-zt-n').textContent = (b.limit_up || []).length + ' 只';
-  $('sp-fb-n').textContent = (b.first_board || []).length + ' 只';
   $('sprite-note').textContent =
     `全A ${st.last_frame || '--'} · 涨停池 ${st.last_pool_at || '--'} · 板块 ${st.last_sector_at || '--'}` +
     ` · 事件 ${st.events_total || 0} 条 · 关注股 ${st.focus_size || 0} 只 · 采样 ${d.sampling_sec || 20}s` +
@@ -2826,9 +2916,139 @@ function renderSprite(d) {
     🏆 <b>封涨停板 / 💔 打开涨停</b> = 涨停池进出场 diff；🔥 <b>板块涨速</b> = 行业 5 分钟 ≥${th.board_hy}% 或官方涨速 ≥${th.board_official_hy}%；概念 5 分钟 ≥${th.board_gn}% 或官方涨速 ≥${th.board_official_gn}%（均要求板块当日为正，${th.board_min_zdf}% 以上）；<br>
     ⚠️ <b>本工作台不做</b>：大笔买入/卖出、机构吃货/吐货、拖拉机单、撤单、新单（需 L2 逐笔委托队列）、有大买盘/大卖盘（需五档盘口）——免费源拿不到，不做假数据。<br>
     ⏱️ 采样粒度 <b>${d.sampling_sec || 20} 秒/轮</b>（非逐笔级）：涨速窗口按真实时间戳回溯，后端同股同类型 5 分钟内只产生一次事件、同板块 10 分钟一次；
-    🎯 <b>首板雷达（抓趋势上涨突破首板）</b>：日内双EMA代理「均线稳步抬升 + 上涨趋势」+ 量比 1.3~1.8（放量约30~50%且非巨量）+ 三分钟涨速&gt;3% + 突破前高/站上慢线，四条件齐备即预警，<b>尽量在涨停之前提示</b>；受<b>大盘温度 + 情绪周期</b>闸门约束（冰点/退潮/大跌时自动静默，仓位与风控沿用原有体系）。
+    🎯 <b>首板雷达 v2（三层漏斗）</b>：L0 用涨停家数/连板梯队/板块涨速/资金/新闻催化选出<b>成趋势的题材</b>；L1 只在这些题材的成分股里挖<b>还没涨停、题材内相对低位、量能刚抬头</b>的票（观察池，不语音）；L2 <b>临板首板</b>是唯一强播报——必须「<b>当天第一次涨停</b>（今日未封板、非连板接力）+ <b>板进度≥85%</b>（现价在昨收→涨停价的位置，自动适配 10/20/30/5% 涨停）+ <b>封板意愿极强</b>（真实五档：卖压清空/委差/买一承接/外盘/均价）+ 原首板标准的趋势质量分 + <b>连续 2 帧确认</b>」。v1 的「涨幅≥1.5% + 3分钟涨速&gt;3%」是早段异动，会在 +3~4% 就推，已被彻底移除；v1 因子集合保留但改为多因子加权打分，不再一条卡死。仍受<b>大盘温度 + 情绪周期</b>闸门约束，仓位与风控沿用原有体系。
     🔊 <b>语音播报默认开启</b>：首板/异动全部转语音（戴耳机随时可听），右下角弹窗默认关闭、语音开启时不再弹出；首次使用点「测试语音」解锁浏览器音频；点击任意行仍可加入自选股池。`;
 }
+
+// ==================== 首板推票 v2 · L2 / L0 / L1 渲染 ====================
+function fbScoreCls(v) { return Number(v) >= 80 ? 'fb-score hot' : 'fb-score'; }
+
+function renderFbL2(d) {
+  const b = d.boards || {}, list = b.first_board || [], watch = b.first_board_watch || [];
+  const cfg = (d.thresholds || {}).fb_v2 || {}, fbst = (d.fb || {}).stats || {};
+  const cols = 'grid-template-columns:1.5fr .9fr .8fr .7fr';
+  const el = $('sp-fb');
+  if (el) {
+    const head = `<div class="fb-line hd2" style="${cols}"><div>股票</div><div>涨幅 / 距涨停</div><div>板进度</div><div>意愿 / 质量</div></div>`;
+    el.innerHTML = head + (list.length ? list.map(x => {
+      const p = Math.round((x.board_progress || 0) * 100);
+      const dist = x.dist_pct != null ? Number(x.dist_pct).toFixed(1) : '--';
+      return `<div class="fb-line" style="${cols}" data-code="${x.code}" data-name="${esc(x.name)}"
+        title="${esc((x.highlights || []).join(' · ') || '多因子共振')} · 意愿${x.intent}分 / 趋势质量${x.quality}分 / 综合${x.total}分 · 点击加入自选">
+        <div class="nm">${x.focus ? '⭐' : ''}${esc(x.name)}<span class="cd">${x.code}</span></div>
+        <div class="${pctCls(x.pct)}">${fmtPct(x.pct)} <span class="c-dim">/ ${dist}%</span></div>
+        <div><div class="fb-bar"><i style="width:${p}%"></i></div><span class="c-dim">${p}%</span></div>
+        <div class="${fbScoreCls(x.intent)}">${x.intent}<span class="c-dim" style="font-weight:400"> / ${x.quality}</span></div>
+      </div>`;
+    }).join('') : `<div class="fb-empty">暂无临板首板。只在「当天第一次涨停 + 板进度≥${((cfg.near_progress || .85) * 100).toFixed(0)}% + 封板意愿极强 + 连续确认」时出现，不再为 +3~4% 早段异动发声。</div>`);
+  }
+  const n = $('sp-fb-n'); if (n) n.textContent = list.length + ' 只';
+  const st = $('sp-fb-status');
+  if (st) st.textContent =
+    `口径：板进度 ≥${((cfg.near_progress || .85) * 100).toFixed(0)}% · 意愿 ≥${cfg.intent_min || 68}分 · 趋势质量 ≥${cfg.quality_min || 55}分 · 综合 ≥${cfg.total_min || 66}分 · 连续 ${cfg.confirm_frames || 2} 帧 · 冷却 ${cfg.cooldown || 300}s ｜ 今日已推 ${fbst.emitted || 0} 次 · 昨日涨停基线 ${(d.fb || {}).prev_zt_count || 0} 只 · 首板闸门 ${(d.gate || {}).allow ? '允许' : '限制'}`;
+  const w = $('sp-fb-watch');
+  if (w) w.innerHTML = watch.length
+    ? '⏳ 临板观察（未达标，不播报）：' + watch.slice(0, 5).map(x =>
+        `${esc(x.name)} 板进度${((x.board_progress || 0) * 100).toFixed(0)}% 意愿${x.intent}分〔${esc(x.reason)}〕`).join(' · ')
+    : '⏳ 临板观察：暂无接近达标的票（这一层让你看清「为什么没推」）';
+}
+
+async function loadThemePick(force) {
+  try {
+    const r = await fetch('/api/theme_pick' + (force ? '?refresh=1' : ''), { cache: 'no-store' });
+    renderFbV2(await r.json());
+  } catch (e) {
+    const s = $('fb-pick-status');
+    if (s) s.textContent = '取数失败：' + e.message;
+  }
+}
+
+function renderFbV2(d) {
+  const meta = d.meta || {}, trends = d.trends || [], digs = d.discoveries || [];
+  const cfg = meta.config || {}, ns = meta.news_state || {}, ts = meta.theme_state || {};
+  const note = $('fb-pick-note');
+  if (note) note.textContent = `算于 ${d.generated_at || '--'} · 全A帧 ${d.rows_at || '--'} · ${d.elapsed_ms || 0}ms${d._cache && d._cache.hit ? ' · 缓存' : ''}`;
+  const st = $('fb-pick-status');
+  if (st) st.innerHTML = `口径：${esc(meta.note || '')}<br>
+    <b>数据源</b>：题材索引 ${esc(ts.state || '--')}（${ts.theme_count || 0} 题材 / ${ts.code_count || 0} 成分股）·
+    快讯催化 ${esc(ns.state || '--')}${ns.err ? '（' + esc(ns.err) + '）' : ''}（${ns.item_count || 0} 条 / ${ns.theme_count || 0} 题材命中）·
+    <b>阈值</b>：题材涨停 ≥${cfg.trend_min_zt || 3} 家、个股涨幅 ≤${cfg.dig_max_pct || 5.5}%、板进度 ≤${cfg.dig_max_progress || 0.62}、启动分 ≥${cfg.dig_min_score || 52}
+    ${meta.session && meta.session !== 'trading' ? `<br>⚠️ <b>当前为${esc(meta.session_label || '非盘中')}（${esc(meta.session)}）</b>：${esc(meta.session_hint || '无实时涨速')}低位池不标「即将冒头」；盘中会自动切换并要求 60s 涨速拐头。` : ''}
+    ${meta.trend_source === 'overnight' ? `<br>📌 <b>趋势题材榜为隔夜口径</b>：${esc(meta.trend_note || '')}。` : ''}
+    ${!d.ok && d.error ? '<br><span style="color:#cf222e">取数异常：' + esc(d.error) + '</span>' : ''}`;
+
+  const tEl = $('fb-trends');
+  const ov = meta.trend_source === 'overnight';
+  if (tEl) {
+    const c = 'grid-template-columns:1.4fr .6fr .8fr .7fr';
+    tEl.innerHTML = `<div class="fb-line hd2" style="${c}"><div>题材</div><div>强度</div><div>${ov ? '昨涨停' : '涨停/连板'}</div><div>催化</div></div>`
+      + (trends.length ? trends.map(x => {
+        const lead = (x.leaders || [])[0];
+        return `<div class="fb-line" style="${c}" title="${ov ? '隔夜口径 · ' : ''}${esc(x.name)} · 题材涨幅 ${x.zdf == null ? '--' : x.zdf + '%'} · 涨速 ${x.speed == null ? '--' : x.speed + '%'} · 主行业资金 ${x.netflow_yi == null ? '--' : x.netflow_yi + '亿'}（近似） · 龙头 ${esc((lead && lead.name) || '--')}${lead ? ' ' + lead.lianban + '板' : ''}${x.news_titles && x.news_titles.length ? ' · 催化：' + esc(x.news_titles[0]) : ''}">
+          <div class="nm">${esc(x.name)}<span class="cd">${esc((lead && lead.name) || '')}</span></div>
+          <div class="${fbScoreCls(x.score)}">${x.score}</div>
+          <div>${x.zt_count} 家${ov ? '' : ' / ' + x.max_lianban + ' 板'}</div>
+          <div>${x.news_count ? '<span class="fb-tag hot">' + x.news_count + ' 条</span>' : '<span class="c-dim">--</span>'}</div>
+        </div>`;
+      }).join('') : '<div class="fb-empty">暂无成趋势的题材（需涨停家数达标或有连板龙头）</div>');
+  }
+  const tn = $('fb-trend-n'); if (tn) tn.textContent = trends.length + ' 个' + (ov ? ' · 隔夜' : '');
+
+  const dEl = $('fb-digs');
+  if (dEl) {
+    const c = 'grid-template-columns:1.2fr 1fr .6fr .6fr .7fr';
+    dEl.innerHTML = `<div class="fb-line hd2" style="${c}"><div>股票</div><div>题材</div><div>涨幅</div><div>启动分</div><div>状态</div></div>`
+      + (digs.length ? digs.map(x => `<div class="fb-line" style="${c}" data-code="${x.code}" data-name="${esc(x.name)}"
+          title="${esc((x.reasons || []).join(' · '))} · 板进度 ${x.board_progress} · 量比 ${x.vol_ratio} · 点击加入自选">
+          <div class="nm">${esc(x.name)}<span class="cd">${x.code}</span></div>
+          <div class="c-dim" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(x.theme)}</div>
+          <div class="${pctCls(x.pct)}">${fmtPct(x.pct)}</div>
+          <div class="${fbScoreCls(x.score)}">${x.score}</div>
+          <div><span class="fb-tag ${x.score >= 70 ? 'hot' : ''}">${esc(x.tag)}</span></div>
+        </div>`).join('')
+        : '<div class="fb-empty">暂无低位候选（趋势题材内未涨停 + 涨幅落后 + 量能刚抬头）</div>');
+  }
+  const dn = $('fb-dig-n'); if (dn) dn.textContent = digs.length + ' 只';
+
+  const nw = $('fb-news');
+  if (nw) {
+    const top = ns.top || [];
+    nw.innerHTML = top.length
+      ? '📰 近 4 小时题材催化：' + top.map(x => `${esc(x[0])} ${x[1]} 条`).join(' · ') + '　（真实快讯，源不可用时不会编造）'
+      : '📰 近 4 小时暂无题材催化快讯（真实源，不做假数据）';
+  }
+}
+
+async function loadDispatchDiag() {
+  const el = $('adv-dispatch-diag');
+  if (!el) return;
+  try {
+    const d = await (await fetch('/api/dispatch_diag', { cache: 'no-store' })).json();
+    if (!d.ok) { el.textContent = '派单诊断取数失败'; return; }
+    const sm = d.summary || {};
+    el.innerHTML = `<div class="dh">🔎 派单诊断 · ${esc(d.date)}
+      ${sm.zero_dispatch ? '<span style="color:#9a6700">全时段零派单</span>' : ''}
+      <span class="c-dim" style="font-weight:400">（报告就绪 ≠ 有派单；弹窗只认 pending_buy_confirm）</span></div>`
+      + `<div class="c-dim" style="margin-bottom:5px">闸门 current asof ${esc((d.gate || {}).current ? d.gate.current.asof || '缺失' : '--')} · main asof ${esc((d.gate || {}).main ? d.gate.main.asof || '缺失' : '--')} · 今日 ${esc(d.date)} ${(d.gate || {}).usable_today ? '可用' : '<b style="color:#9a6700">不可用（fail-open）</b>'}</div>`
+      + (d.stages || []).map(x => `<div class="dr">
+          <span class="st ${esc(x.status)}">${esc(x.stage)}</span>
+          <span>${esc(x.label)}${x.temp != null ? ' ' + x.temp + '°' : ''}</span>
+          <span class="c-dim">${esc(x.reason)}</span></div>`).join('')
+      + `<div class="hint">${(d.hints || []).map(h => '· ' + esc(h)).join('<br>')}</div>`;
+  } catch (e) { el.textContent = '派单诊断取数失败：' + e.message; }
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  const btn = $('fb-pick-refresh');
+  if (btn) btn.onclick = function () {
+    btn.disabled = true;
+    loadThemePick(true).finally(function () { btn.disabled = false; });
+  };
+  loadThemePick();
+  loadDispatchDiag();
+  setInterval(function () { loadThemePick(); }, 20000);
+  setInterval(function () { loadDispatchDiag(); }, 60000);
+});
 
 setInterval(() => loadSprite(), 5000);
 

@@ -83,18 +83,26 @@ class SpriteEngine:
         self.seq = 0
         self._boards = {"rocket": [], "speed": [], "sector": [],
                         "board_hy": [], "board_gn": [],
-                        "limit_up": [], "dive": [], "first_board": []}
+                        "limit_up": [], "dive": [], "first_board": [],
+                        "first_board_watch": []}   # v2：接近达标但被挡的票（可诊断）
         self._stats = {
             "frames": 0, "last_frame": None, "day": "",
             "events_total": 0, "focus_size": 0, "hist_size": 0, "board_size": 0,
             "last_full_at": None, "last_pool_at": None, "last_sector_at": None,
         }
         self.errors = []
-        # 首板雷达：每只股票的双EMA状态 + 大盘/情绪闸门
-        self._fbs = {}                  # code -> {ema_fast, ema_slow, rise, prev_ema_slow}
+        # 首板雷达 v2：每只股票的双EMA状态 + 连续确认 + 大盘/情绪闸门
+        # _fbs[code] = {ts, ema_fast, ema_slow, rise, streak, last_emit, last_reason}
+        self._fbs = {}
         self._gate_provider = None
         self._gate = {"allow": True, "reason": "未接入大盘/情绪闸门",
                       "temp": None, "stage": None}
+        self._prev_zt_provider = None   # 昨日涨停代码集合（排除连板接力）
+        self._prev_zt = set()
+        self._prev_zt_day = ""
+        self._trend_provider = None     # 趋势题材名集合（L0 结果，仅用于事件标签）
+        self._trends = []
+        self._fb_stats = {"emitted": 0, "watch": 0, "filtered": {}, "frames": 0}
 
     # ------------------------------------------------------------------ 工具
     def _err(self, tag, exc):
@@ -139,6 +147,136 @@ class SpriteEngine:
         alpha = max(0.01, min(0.6, alpha))
         ema = state + alpha * (price - state)
         return ema, ema
+
+    # ------------------------------------------------------------------
+    # 首板雷达 v2 · L2 临板首板（2026-11-05）
+    # 用户原则：只放「当天第一次涨停」+「即将涨停」+「涨停意愿特别强」的票，
+    # 不再在 +3~4% 早段异动就推。以下所有因子都来自真实快照字段。
+    # ------------------------------------------------------------------
+    def set_prev_zt_provider(self, fn):
+        """注入「昨日涨停代码集合」提供函数，用于排除连板接力（非当天第一次涨停）。"""
+        self._prev_zt_provider = fn
+
+    def set_trend_provider(self, fn):
+        """注入 L0 趋势题材名列表，仅用于给 L2 事件打题材标签（不参与硬门槛）。"""
+        self._trend_provider = fn
+
+    def _refresh_prev_zt(self):
+        day = datetime.now().strftime("%Y-%m-%d")
+        if not self._prev_zt_provider or (self._prev_zt_day == day and self._prev_zt):
+            return
+        if time.time() - getattr(self, "_prev_zt_at", 0) < 300:
+            return
+        self._prev_zt_at = time.time()
+        try:
+            codes = self._prev_zt_provider() or set()
+            with self.lock:
+                self._prev_zt = {str(c).strip().zfill(6) for c in codes}
+                self._prev_zt_day = day if codes else ""
+            print(f"[first_board] 昨日涨停基线 {len(self._prev_zt)} 只（排除连板接力）")
+        except Exception as e:
+            self._err("prev_zt", e)
+
+    def _refresh_trends(self):
+        if not self._trend_provider or time.time() - getattr(self, "_trend_at", 0) < 30:
+            return
+        self._trend_at = time.time()
+        try:
+            self._trends = list(self._trend_provider() or [])[:30]
+        except Exception as e:
+            self._err("trend", e)
+
+    @staticmethod
+    def _board_progress(rec):
+        """板进度 = (现价-昨收)/(涨停价-昨收)。归一化后自动适配 10/20/30/5% 涨停。"""
+        price, prev, zt = _f(rec.get("price")), _f(rec.get("prev_close")), _f(rec.get("zt_price"))
+        if price is None or prev is None or zt is None or zt <= prev or price <= 0:
+            return None
+        return max(0.0, min(1.2, (price - prev) / (zt - prev)))
+
+    @staticmethod
+    def _fb_intent(rec, sp1, price, high):
+        """封板意愿评分（0~100）：只用腾讯 qt 真实五档/委差/外盘/均价字段。
+
+        返回 (score, coverage, parts, missing)。缺失因子不参与计分并按可用权重
+        归一化，避免「数据缺失 = 自动扣分」造成误判；coverage 过低时调用方拒绝推送。
+        """
+        w = dict(getattr(config, "FB_INTENT_W", {}))
+        parts, missing = {}, []
+
+        def put(k, val):
+            if val is None:
+                missing.append(k)
+            else:
+                parts[k] = max(0.0, min(1.0, float(val)))
+
+        wc = _f(rec.get("weicha"))
+        b5 = _f(rec.get("bid5_vol")) or 0.0
+        a5 = _f(rec.get("ask5_vol")) or 0.0
+        put("weicha", None if (wc is None or b5 + a5 <= 0) else wc / (b5 + a5) * 2.0)
+
+        b1, a1 = _f(rec.get("bid1_vol")), _f(rec.get("ask1_vol"))
+        put("ask_thin", None if (b1 is None and a1 is None)
+            else 1.0 - ((a1 or 0.0) / max((a1 or 0.0) + (b1 or 0.0), 1.0)))
+
+        outer, inner = _f(rec.get("outer")) or 0.0, _f(rec.get("inner")) or 0.0
+        put("bid_stack", None if (b1 is None or outer + inner <= 0)
+            else min((b1 or 0.0) / (outer + inner) * 3.0, 1.0))
+        put("outer", None if outer + inner <= 0
+            else (outer / (outer + inner) - 0.4) / 0.4)
+        put("new_high", None if not high else (1.0 if price >= high * 0.998 else 0.0))
+        avgp = _f(rec.get("avg_price"))
+        put("above_avg", None if avgp is None else (1.0 if price > avgp else 0.0))
+        put("sp1", None if sp1 is None else min(sp1 / 0.8, 1.0))
+
+        total_w = sum(w.values()) or 1.0
+        avail_w = sum(w.get(k, 0) for k in parts)
+        coverage = avail_w / total_w
+        score = (100.0 * sum(w.get(k, 0) * v for k, v in parts.items()) / avail_w
+                 if avail_w > 0 else 0.0)
+        return (round(score, 1), round(coverage, 2),
+                {k: round(v, 2) for k, v in parts.items()}, missing)
+
+    @staticmethod
+    def _fb_quality(rec, rise, sp2, impulse, trend_up, breakout):
+        """趋势质量分（0~100）：v1 首板雷达的因子集合，改成加权而非 AND 硬链。"""
+        w = dict(getattr(config, "FB_QUALITY_W", {}))
+        vr = _f(rec.get("vol_ratio"))
+        if vr is not None and 1.30 <= vr <= 1.80:
+            gentle = 1.0
+        elif vr is not None and 1.00 <= vr <= 2.50:
+            gentle = 0.5
+        else:
+            gentle = 0.0
+        parts = {
+            "ma_rising": min(rise / max(config.SPRITE_FB_RISE_FRAMES, 1), 1.0),
+            "trend_up": 1.0 if trend_up else 0.0,
+            "breakout": 1.0 if breakout else 0.0,
+            "impulse": min(max(impulse or 0.0, 0.0) /
+                           max(getattr(config, "FB_IMPULSE_MIN", 3.0) * 1.5, 0.01), 1.0),
+            "gentle_vol": gentle,
+            "sp3": min(max(sp2 or 0.0, 0.0) / 2.0, 1.0),
+        }
+        score = sum(w.get(k, 0) * v for k, v in parts.items())
+        return round(score, 1), {k: round(v, 2) for k, v in parts.items()}
+
+    def _fb_bump(self, reason):
+        with self.lock:
+            f = self._fb_stats["filtered"]
+            f[reason] = f.get(reason, 0) + 1
+
+    def _fb_theme_tag(self, code):
+        """给临板事件打「趋势题材」标签：优先取 L0 选中的题材，否则取首个所属题材。"""
+        try:
+            import theme_board
+            names = theme_board.instance().themes_for(code)
+            for n in names:
+                if n in self._trends:
+                    return n
+            return names[0] if names else ""
+        except Exception as e:
+            self._err("theme_tag", e)
+            return ""
 
     def _refresh_focus(self):
         if not self._focus_provider:
@@ -243,6 +381,11 @@ class SpriteEngine:
             self._cool.clear()
             self._sector_cool.clear()
             self._board_hist.clear()
+            # v2：跨日清空首板确认状态 / 统计 / 昨日涨停基线（新日重拉）
+            self._fbs.clear()
+            self._fb_stats = {"emitted": 0, "watch": 0, "filtered": {}, "frames": 0}
+            self._prev_zt.clear()
+            self._prev_zt_day = ""
             return True
 
     # ------------------------------------------------------- 全A帧（个股事件）
@@ -254,8 +397,12 @@ class SpriteEngine:
         try:
             self._refresh_focus()
             self._refresh_gate()
+            self._refresh_prev_zt()
+            self._refresh_trends()
             self._rollover()
-            speed_list, dive_list, fb_list = [], [], []
+            speed_list, dive_list, fb_list, fb_watch = [], [], [], []
+            with self.lock:
+                self._fb_stats["frames"] += 1
             w1, w2 = (config.SPRITE_WINDOWS + [180])[:2]
             for rec in rows:
                 code = rec.get("code")
@@ -333,61 +480,144 @@ class SpriteEngine:
                             f"量比 {vr:.1f} + {w1//60}分钟 {sp1:+.2f}% · 额{amount:.1f}亿")
                 except Exception as e:
                     self._err("emit", e)
-                # ---- 🎯 首板雷达（抓趋势上涨突破首板）----
-                # 条件：均线稳步抬升(日内慢线连续上升) + 上涨趋势(价在慢线/开盘/昨收之上)
-                #       + 突然放量(量比30~50%且非巨量) + 三分钟涨速>3% + 突破趋势(创新高且站上慢线)
-                #       + 大盘/情绪闸门允许。尽量在涨停之前提示。
-                if config.SPRITE_FB_ENABLED and in_trading:
+                # ---- 🎯 首板雷达 v2 · L2 临板首板（打板前最后一脚，唯一强播报）----
+                # 用户反馈：v1 推过 4 次都是 +3~4%，买了就跌。根因是 v1 用
+                # 「涨幅≥1.5% + 3分钟涨速>3%」= 早段异动触发。v2 把触发点推到
+                # 「板进度 ≥0.85」，并要求真实五档盘口的封板意愿极强 + 连续确认。
+                if (config.SPRITE_FB_ENABLED and getattr(config, "FB_V2_ENABLED", False)
+                        and in_trading):
                     try:
-                        fbs = self._fbs.get(code)
-                        prev_ts = fbs["ts"] if fbs else None
-                        dt = (ts - prev_ts) if prev_ts else w2
-                        ef0 = fbs["ema_fast"] if fbs else None
-                        es0 = fbs["ema_slow"] if fbs else None
-                        ef_new = self._ema_update(ef0, price, dt, config.SPRITE_FB_EMA_FAST)[1]
-                        es_new = self._ema_update(es0, price, dt, config.SPRITE_FB_EMA_SLOW)[1]
-                        rise = (fbs["rise"] + 1) if (fbs and es_new > fbs["ema_slow"]) else 0
-                        self._fbs[code] = {"ts": ts, "ema_fast": ef_new,
-                                           "ema_slow": es_new, "rise": rise}
-                        open_ = rec.get("open")
-                        prev_close = rec.get("prev_close")
-                        vr_ = rec.get("vol_ratio")
-                        ma_rising = rise >= config.SPRITE_FB_RISE_FRAMES     # 均线稳步抬升
-                        trend_up = (price > es_new
-                                    and (open_ is None or price > open_)
-                                    and (prev_close is None or price > prev_close))  # 上涨趋势
-                        vol_ok = (vr_ is not None
-                                  and config.SPRITE_FB_VOL_MIN <= vr_ <= config.SPRITE_FB_VOL_MAX
-                                  and vr_ < config.SPRITE_FB_VOL_GIANT)      # 放量30~50% 且非巨量
-                        speed_ok = (sp2 is not None and sp2 >= config.SPRITE_FB_SPEED)  # 三分钟涨速>3%
-                        breakout = (high and price >= high * 0.99           # 创新高
-                                    and ef_new > es_new                     # 快线在慢线之上
-                                    and price > es_new * (1 + config.SPRITE_FB_BREAK_PCT / 100.0))  # 站上慢线=突破
-                        pct_ok = config.SPRITE_FB_MIN_PCT <= pct < config.SPRITE_FB_MAX_PCT
-                        liq_ok = amount >= config.SPRITE_FB_MIN_AMOUNT
-                        hit = ma_rising and trend_up and vol_ok and speed_ok and breakout and pct_ok and liq_ok
-                        if hit and self._gate.get("allow", True):
-                            if not self._cooled("first_board", code, ts, config.SPRITE_FB_COOLDOWN):
-                                vol_pct = int(round((vr_ - 1) * 100)) if vr_ else 0
-                                fb_text = (f"首板预警 {name} 现价{price:.2f} 涨{pct:+.2f}% "
-                                           f"放量约{vol_pct}% 三分钟涨速{sp2:+.2f}% 突破前高 均线多头 建议重点关注")
-                                self._emit(
-                                    "first_board", ts, code, name, price, pct, sp2, w2, amount, vr_,
-                                    fb_text, level=1,
-                                    extra={"ma_rising": ma_rising, "trend_up": trend_up,
-                                           "vol_ok": vol_ok, "speed_ok": speed_ok,
-                                           "breakout": breakout, "ema_fast": round(ef_new, 3),
-                                           "ema_slow": round(es_new, 3), "vol_pct": vol_pct,
-                                           "gate": self._gate.get("reason", "")})
-                        if hit:
-                            fb_list.append({
-                                "code": code, "name": name, "price": price, "pct": pct,
-                                "sp": sp2, "amount_yi": amount, "vol_ratio": vr_,
-                                "ma_rising": ma_rising, "trend_up": trend_up,
-                                "breakout": breakout,
-                                "vol_pct": int(round((vr_ - 1) * 100)) if vr_ else 0,
-                                "focus": code in self._focus,
-                            })
+                        s = self._fbs.get(code) or {}
+                        dt = (ts - s["ts"]) if s.get("ts") else w2
+                        ef_new = self._ema_update(s.get("ema_fast"), price, dt,
+                                                  config.SPRITE_FB_EMA_FAST)[1]
+                        es_new = self._ema_update(s.get("ema_slow"), price, dt,
+                                                  config.SPRITE_FB_EMA_SLOW)[1]
+                        rise = ((s.get("rise", 0) + 1)
+                                if (s and es_new > s.get("ema_slow", 0)) else 0)
+                        state = {"ts": ts, "ema_fast": ef_new, "ema_slow": es_new,
+                                 "rise": rise, "streak": 0,
+                                 "last_emit": s.get("last_emit", 0), "last_reason": ""}
+                        prog = self._board_progress(rec)
+                        near_lo = getattr(config, "FB_NEAR_PROGRESS", 0.85)
+                        near_hi = getattr(config, "FB_NEAR_PROGRESS_MAX", 0.995)
+                        # 非临板区（含 +3~4% 早段）只更新 EMA 状态，不打分、不推
+                        if prog is not None and near_lo <= prog < near_hi:
+                            nm = str(name or "").upper().replace(" ", "")
+                            vr_ = _f(rec.get("vol_ratio"))
+                            bad = None
+                            if code in self._zt_ever:
+                                bad = "今日已封过板"
+                            elif code in self._zt_prev:
+                                bad = "当前已封板"
+                            elif code in self._prev_zt:
+                                bad = "昨日涨停(连板接力)"
+                            elif "ST" in nm or "退" in nm:
+                                bad = "ST/退市"
+                            elif nm.startswith(("N", "C")):
+                                bad = "新股"
+                            elif amount < config.SPRITE_FB_MIN_AMOUNT:
+                                bad = "成交额不足"
+                            elif vr_ is not None and vr_ > getattr(config, "FB_VOL_HARD_MAX", 6.0):
+                                bad = "巨量出货"
+                            if bad:
+                                self._fb_bump(bad)
+                                state["last_reason"] = bad
+                            else:
+                                intent, coverage, iparts, missing = self._fb_intent(
+                                    rec, sp1, price, high)
+                                lo = None
+                                for pt, ppct, _pp in (self._hist.get(code) or ()):
+                                    if ts - pt <= w2:
+                                        lo = ppct if lo is None else min(lo, ppct)
+                                impulse = (pct - lo) if lo is not None else None
+                                op = _f(rec.get("open"))
+                                pcl = _f(rec.get("prev_close"))
+                                avgp = _f(rec.get("avg_price"))
+                                ma_rising = rise >= config.SPRITE_FB_RISE_FRAMES
+                                trend_up = (price > es_new
+                                            and (op is None or price > op)
+                                            and (pcl is None or price > pcl)
+                                            and (avgp is None or price > avgp))
+                                breakout = (bool(high) and price >= high * 0.99
+                                            and ef_new > es_new)
+                                quality, qparts = self._fb_quality(
+                                    rec, rise, sp2, impulse, trend_up, breakout)
+                                total = round(0.6 * intent + 0.4 * quality, 1)
+                                gate_ok = self._gate.get("allow", True)
+                                ok = (intent >= config.FB_INTENT_MIN
+                                      and quality >= config.FB_QUALITY_MIN
+                                      and total >= config.FB_TOTAL_MIN
+                                      and coverage >= config.FB_INTENT_COVERAGE_MIN
+                                      and gate_ok)
+                                if ok:
+                                    state["streak"] = int(s.get("streak", 0)) + 1
+                                else:
+                                    why = ("意愿不足" if intent < config.FB_INTENT_MIN else
+                                           "趋势质量不足" if quality < config.FB_QUALITY_MIN else
+                                           "综合分不足" if total < config.FB_TOTAL_MIN else
+                                           "盘口数据不足" if coverage < config.FB_INTENT_COVERAGE_MIN else
+                                           "闸门限制")
+                                    state["last_reason"] = why
+                                    self._fb_bump(why)
+                                common = {
+                                    "code": code, "name": name, "price": price,
+                                    "pct": pct, "amount_yi": amount, "vol_ratio": vr_,
+                                    "board_progress": round(prog, 3),
+                                    "intent": intent, "quality": quality,
+                                    "total": total, "coverage": coverage,
+                                    "intent_parts": iparts, "quality_parts": qparts,
+                                    "impulse": (round(impulse, 2) if impulse is not None else None),
+                                    "sp": sp2, "sp1": sp1, "streak": state["streak"],
+                                    "reason": state["last_reason"] or "达标",
+                                    "missing": missing, "focus": code in self._focus,
+                                }
+                                need = int(getattr(config, "FB_CONFIRM_FRAMES", 2))
+                                cap = int(getattr(config, "FB_MAX_PER_FRAME", 3))
+                                if state["streak"] >= need and gate_ok and len(fb_list) < cap:
+                                    if not self._cooled("first_board", code, ts,
+                                                        getattr(config, "FB_COOLDOWN", 300)):
+                                        ztp = _f(rec.get("zt_price"))
+                                        dist = ((ztp - price) / price * 100.0
+                                                if ztp and price else 0.0)
+                                        highlights = []
+                                        if iparts.get("ask_thin", 0) >= 0.8:
+                                            highlights.append("卖压清空")
+                                        if iparts.get("weicha", 0) >= 0.6:
+                                            highlights.append("委买压倒")
+                                        if iparts.get("bid_stack", 0) >= 0.6:
+                                            highlights.append("买盘承接厚")
+                                        if iparts.get("outer", 0) >= 0.6:
+                                            highlights.append("主动买盘强")
+                                        if iparts.get("new_high", 0) >= 0.9:
+                                            highlights.append("创当日新高")
+                                        if (impulse or 0) >= getattr(config, "FB_IMPULSE_MIN", 3.0):
+                                            highlights.append(f"{w2 // 60}分钟拉升{impulse:.1f}%")
+                                        tag = self._fb_theme_tag(code)
+                                        if tag:
+                                            highlights.append(f"趋势题材 {tag}")
+                                        hl = "、".join(highlights[:4]) or "多因子共振"
+                                        fb_text = (f"临板首板 {name} 涨{pct:+.2f}% "
+                                                   f"距涨停{dist:.2f}% 封板意愿{intent:.0f}分 "
+                                                   f"趋势质量{quality:.0f}分 · {hl}")
+                                        voice = (f"首板临门，{name}，涨{pct:.1f}%，"
+                                                 f"距涨停{dist:.1f}%，封板意愿{intent:.0f}分，"
+                                                 f"{hl}。注意打板风险")
+                                        self._emit(
+                                            "first_board", ts, code, name, price, pct,
+                                            sp2, w2, amount, vr_, fb_text, level=1,
+                                            extra={**common, "dist_pct": round(dist, 2),
+                                                   "highlights": highlights,
+                                                   "voice": voice, "theme": tag,
+                                                   "gate": self._gate.get("reason", "")})
+                                        fb_list.append({**common, "sp": sp2})
+                                        state["last_emit"] = ts
+                                        state["streak"] = 0
+                                        with self.lock:
+                                            self._fb_stats["emitted"] += 1
+                                else:
+                                    fb_watch.append(common)
+                        self._fbs[code] = state
                     except Exception as e:
                         self._err("first_board", e)
             # ---- 榜单落库 ----
@@ -399,7 +629,10 @@ class SpriteEngine:
                 self._boards["rocket"] = rocket_rank
                 self._boards["dive"] = dive_list[:config.SPRITE_SPEED_TOP]
                 self._boards["first_board"] = sorted(
-                    fb_list, key=lambda x: -x["pct"])[:config.SPRITE_SPEED_TOP]
+                    fb_list, key=lambda x: (-x["total"], -x["intent"]))[:config.SPRITE_SPEED_TOP]
+                self._boards["first_board_watch"] = sorted(
+                    fb_watch, key=lambda x: (-x["total"], -x["board_progress"]))[:12]
+                self._fb_stats["watch"] = len(fb_watch)
                 self._stats["frames"] += 1
                 self._stats["last_frame"] = datetime.now().strftime("%H:%M:%S")
                 self._stats["last_full_at"] = datetime.now().strftime("%H:%M:%S")
@@ -591,6 +824,29 @@ class SpriteEngine:
                         "gate_temp": config.SPRITE_FB_GATE_TEMP,
                         "gate_stages": list(config.SPRITE_FB_GATE_STAGES),
                     },
+                    # v2 实际生效的口径（前端说明条与诊断用，避免展示过期的 v1 阈值）
+                    "fb_v2": {
+                        "enabled": getattr(config, "FB_V2_ENABLED", False),
+                        "near_progress": getattr(config, "FB_NEAR_PROGRESS", 0.85),
+                        "near_progress_max": getattr(config, "FB_NEAR_PROGRESS_MAX", 0.995),
+                        "intent_min": getattr(config, "FB_INTENT_MIN", 68),
+                        "quality_min": getattr(config, "FB_QUALITY_MIN", 55),
+                        "total_min": getattr(config, "FB_TOTAL_MIN", 66),
+                        "coverage_min": getattr(config, "FB_INTENT_COVERAGE_MIN", 0.6),
+                        "confirm_frames": getattr(config, "FB_CONFIRM_FRAMES", 2),
+                        "impulse_min": getattr(config, "FB_IMPULSE_MIN", 3.0),
+                        "vol_hard_max": getattr(config, "FB_VOL_HARD_MAX", 6.0),
+                        "cooldown": getattr(config, "FB_COOLDOWN", 300),
+                        "intent_w": dict(getattr(config, "FB_INTENT_W", {})),
+                        "quality_w": dict(getattr(config, "FB_QUALITY_W", {})),
+                    },
+                },
+                "fb": {
+                    "stats": dict(self._fb_stats),
+                    "prev_zt_count": len(self._prev_zt),
+                    "prev_zt_day": self._prev_zt_day,
+                    "trends": list(self._trends)[:12],
+                    "tracked": len(self._fbs),
                 },
                 "errors": self.errors[-5:],
             }

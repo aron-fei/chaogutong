@@ -10,11 +10,12 @@ import re
 import sys
 from pathlib import Path
 
-sys.path.insert(0, "/Users/williamli/Work/market-monitor")
+BASE_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(BASE_DIR))
 import suggestion_ledger as sl  # noqa: E402
 
-STATE = Path("/Users/williamli/Work/market-monitor/data/suggestion_state.json")
-BACKUP = Path("/Users/williamli/Work/market-monitor/data/suggestion_state.json.bak_20261021_fingerprint")
+STATE = BASE_DIR / "data" / "suggestion_state.json"
+BACKUP = BASE_DIR / "data" / "suggestion_state.json.bak_20261021_fingerprint"
 
 
 def old_fingerprint(title):

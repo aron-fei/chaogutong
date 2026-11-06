@@ -608,6 +608,10 @@ class MarketData:
         except Exception:
             total_amount, avg5 = 0.0, 0.0
         with self.lock:
+            # 2026-11-05 首板雷达 v2：缓存整帧全A快照，供「趋势题材 / 低位挖掘」
+            # 直接内存 join，零额外网络请求（约 5200 行，约 3MB 常驻）。
+            self.full_rows = rows
+            self.full_rows_at = now
             self.breadth = breadth
             self.breadth["amount_yi"] = round(total_amount, 1)
             self.breadth["avg5_yi"] = avg5
@@ -701,6 +705,18 @@ class MarketData:
                     "outer": _num(parts, 7),           # 外盘(手)
                     "inner": _num(parts, 8),           # 内盘(手)
                     "mv_yi": _num(parts, 44),          # 流通市值(亿)
+                    # ---- 2026-11-05 首板雷达 v2：五档盘口 + 委差（腾讯 qt 实测有效）----
+                    # 实测涨停封死票：卖一量=0 / 买一量=47万手 / 委差=+48.9万手；
+                    # 正常票（茅台）：买一量=1 / 卖一量=15 / 委差=-8。
+                    # 这组真实盘口是「封板意愿」的唯一可靠依据，不编造指标。
+                    "bid1": _num(parts, 9),            # 买一价
+                    "bid1_vol": _num(parts, 10),       # 买一量(手)
+                    "ask1": _num(parts, 19),           # 卖一价
+                    "ask1_vol": _num(parts, 20),       # 卖一量(手)
+                    "bid5_vol": sum(_num(parts, i) or 0 for i in (10, 12, 14, 16, 18)),
+                    "ask5_vol": sum(_num(parts, i) or 0 for i in (20, 22, 24, 26, 28)),
+                    "weicha": _num(parts, 50),         # 委差 = 委买总手 - 委卖总手
+                    "limit_down": _num(parts, 48),     # 跌停价
                 })
         if len(rows) < 3000:
             raise RuntimeError(f"腾讯批量返回异常: {len(rows)} 行")
@@ -894,6 +910,15 @@ class MarketData:
         }
 
     # ---------------- 快照（供 API 返回） ----------------
+    def get_full_rows(self):
+        """返回最近一次成功抓取的全A帧（只读副本引用 + 时间戳）。
+
+        2026-11-05 首板雷达 v2：L1 低位挖掘要在「趋势题材成分股」上算位置/量能/
+        盘口，直接用这一帧即可，避免再打一次 5200 只的批量行情。
+        """
+        with self.lock:
+            return list(getattr(self, "full_rows", []) or []), getattr(self, "full_rows_at", 0)
+
     def snapshot(self):
         with self.lock:
             status, status_text = market_status()

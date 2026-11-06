@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>开盘啦 App 功能与页面设计调研 · 2026-11-06</title>
+<style>
+:root{--bg:#f7f8fa;--card:#fff;--line:#e3e6ec;--txt:#1b1f26;--mut:#5f6672;--red:#c62f2f;--green:#12894a;--blue:#1a5fb4;--amber:#a86400}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.7 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+.wrap{max-width:1360px;margin:0 auto;padding:28px 32px 64px}
+h1{font-size:24px;font-weight:600;margin:0 0 6px}
+h2{font-size:18px;font-weight:600;margin:34px 0 12px;padding-left:10px;border-left:4px solid var(--blue)}
+h3{font-size:15px;font-weight:600;margin:22px 0 8px}
+p{margin:8px 0}
+.meta{color:var(--mut);font-size:13px;margin-bottom:22px}
+.lead{background:#fff;border:1px solid var(--line);border-radius:10px;padding:18px 22px;margin:18px 0}
+.lead ol{margin:6px 0 0;padding-left:22px}
+.lead li{margin:7px 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 20px;margin:12px 0}
+table{width:100%;border-collapse:collapse;background:#fff;font-size:13px;margin:10px 0 16px}
+th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+th{background:#f0f3f8;font-weight:600;white-space:nowrap}
+td:first-child{white-space:nowrap;font-weight:500}
+tr:nth-child(even) td{background:#fbfcfe}
+.tag{display:inline-block;padding:1px 7px;border-radius:4px;font-size:12px;line-height:1.6;border:1px solid}
+.t-a{color:#0b6b3a;background:#e8f6ee;border-color:#b9e2ca}
+.t-b{color:#8a5200;background:#fdf2dd;border-color:#efd49a}
+.t-c{color:#555c68;background:#f1f3f6;border-color:#d9dee6}
+.t-p0{color:#a11c1c;background:#fdeaea;border-color:#f2bdbd}
+.t-p1{color:#8a5200;background:#fdf2dd;border-color:#efd49a}
+.t-p2{color:#1a5fb4;background:#eaf2fd;border-color:#bcd3f2}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:12px}
+.kv{font-size:13px;color:var(--mut)}
+.kv b{color:var(--txt);font-weight:600}
+ul{margin:6px 0;padding-left:22px}
+li{margin:4px 0}
+.shot{width:100%;border:1px solid var(--line);border-radius:8px;display:block;margin:10px 0}
+.note{background:#fff8e8;border:1px solid #f0d9a0;border-radius:8px;padding:12px 16px;font-size:13px}
+.ok{color:var(--green);font-weight:600}.no{color:var(--red);font-weight:600}
+code{background:#f1f3f6;padding:1px 5px;border-radius:3px;font-size:12.5px}
+.src{font-size:12.5px;color:var(--mut)}
+.src a{color:var(--blue);text-decoration:none}
+.foot{margin-top:36px;padding-top:14px;border-top:1px solid var(--line);color:var(--mut);font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>开盘啦 App · 功能全景与页面设计调研</h1>
+<div class="meta">调研日期 2026-11-06 · 面向 market-monitor 工作台改造参考 · 资料来源以官方站 kaipanla.com 教程 / 大事记为主，第三方应用市场与百科为补充</div>
+
+<div class="lead">
+<b>结论先行（5 条）</b>
+<ol>
+<li><b>它不是行情软件，是「短线资金决策流水线」。</b>普通 App 按「行情 / 自选 / 资讯」组织，开盘啦按<b>时间顺序</b>组织：盘前找方向 → 竞价验资金 → 盘中定主线 → 盘后做复盘。每个时段有专属页面、专属指标、专属下钻路径。</li>
+<li><b>核心壁垒是「自创指标 + 数据颗粒度」</b>：板块强度值、区间强度、涨停委买额（尤其 9:20–9:25 不可撤单部分）、竞价爆量倍数、亏钱效应、涨停天梯。这些不是标准行情字段，是对原始逐笔 / 委托数据再加工的结果。</li>
+<li><b>页面设计高度一致：密集表格 + 排序即筛选 + 两级下钻。</b>几乎不用卡片式瀑布流，一屏塞尽可能多的可排序数值列；点击行进入二级页；「我的版面」负责把常用模块拼回一屏。</li>
+<li><b>标记体系是它的「信息压缩」手段</b>：持续火爆、上升名次红色小箭头、涨停数红色小方块、特色标签、异动标签。用极小视觉成本把「为什么该看这条」标出来，而不是让用户自己比对。</li>
+<li><b>对你工作台最有价值的不是抄 UI，是抄它的三层结构</b>：题材库式的「先定方向」→ 竞价 / 强度式的「验证资金」→ 临板式的「只推最后一脚」。这与已经落地的 L0 趋势题材 / L1 低位挖掘 / L2 临板首板三层漏斗同构，差距主要在<b>竞价数据、区间时间轴、涨停天梯 / 涨停原因、亏钱效应</b>四块。</li>
+</ol>
+</div>
+
+<h2>一、产品定位与演进（官方大事记）</h2>
+<div class="card">
+<p class="kv"><b>官方定位</b>：「免费为用户提供最简单、最直接、最高效的工具，解构市场逻辑，呈现资金动向，精准把握投资机会」「简单炒股，快乐生活」。所有工具与资讯永久免费。</p>
+<table>
+<tr><th>年份</th><th>上线能力</th><th>对产品形态的意义</th></tr>
+<tr><td>2016</td><td>开盘啦 APP 正式上线</td><td>短线工具起步</td></tr>
+<tr><td>2017</td><td>市场情绪、实时龙虎榜</td><td>从行情转向「情绪 + 资金」</td></tr>
+<tr><td>2018</td><td>区间统计、涨停板复盘、板块叠加</td><td>确立「任意时段回溯」这一核心交互</td></tr>
+<tr><td>2019</td><td>复盘啦、全新文章系统</td><td>盘后闭环 + 内容沉淀</td></tr>
+<tr><td>2020</td><td>全新北向资金系统</td><td>增量资金维度</td></tr>
+<tr><td>2021</td><td>深度龙虎榜、竞价系统、积分系统、机构增仓</td><td>把盘前竞价做成独立体系</td></tr>
+<tr><td>2022</td><td>机构纪要、我的版面</td><td>基本面 + 个性化版面</td></tr>
+<tr><td>2023</td><td>题材库、明天炒什么、异动停牌</td><td>题材产业链结构化 + 盘前预期</td></tr>
+<tr><td>2024</td><td>特色标签、我的版面-早盘竞价</td><td>标签化选股 + 竞价版面化</td></tr>
+<tr><td>2025</td><td>全面算法升级，全新 UI 即将上线</td><td>当前版本处于改版前夜</td></tr>
+</table>
+<p class="src">来源：官网「关于我们 / 大事记」<a href="https://www.kaipanla.com/omain/index.html">kaipanla.com/omain/index.html</a>。<span class="t-a tag">官方</span></p>
+</div>
+
+<h2>二、功能全景清单</h2>
+
+<h3>2.1 盘前 · 找方向</h3>
+<table>
+<tr><th>功能</th><th>作用</th><th>关键指标 / 页面元素</th><th>可信度</th></tr>
+<tr><td>明天炒什么</td><td>开盘前聚合政策、热点与市场舆论，提前感知次日可能受关注的方向</td><td>热榜、用户投票看好比例（案例：近 70% 看好数字货币）、关联个股、跳转题材库</td><td><span class="t-a tag">官方</span></td></tr>
+<tr><td>题材库</td><td>汇总全市场题材 + 热度排名 + 产业链「小表格」分支</td><td>顶部搜索栏、按热度 / 按涨幅切换、持续火爆标记、上升名次 + 红色小箭头、涨停数红色小方块、题材介绍「查看全文」、多级子分支</td><td><span class="t-a tag">官方</span></td></tr>
+<tr><td>主题机会</td><td>时效性题材前瞻</td><td>最新主题、投资日历、收藏（右上角星号）</td><td><span class="t-b tag">官方文章</span></td></tr>
+<tr><td>互动易</td><td>上市公司问答关键词监控 / 热搜</td><td>智能订阅、自定义订阅关键词（物理 AI / MLCC / 芯片）、热搜排名</td><td><span class="t-b tag">官方文章</span></td></tr>
+<tr><td>百日新高</td><td>用新高家数判断情绪与赚钱效应</td><td>总趋势、今日新增、新高家数的板块分布</td><td><span class="t-b tag">官方文章</span></td></tr>
+<tr><td>机构纪要 / 机构增仓</td><td>基本面与机构行为线索</td><td>增仓金额、增仓占比、纪要正文</td><td><span class="t-b tag">官方文章</span></td></tr>
+</table>
+
+<h3>2.2 竞价 · 验资金（09:15–09:25）</h3>
+<table>
+<tr><th>功能</th><th>作用</th><th>关键指标 / 页面元素</th><th>可信度</th></tr>
+<tr><td>早盘竞价</td><td>把握整体竞价氛围与个股异动</td><td>涨停委买额、竞价涨幅、竞价成交额、竞价爆量、主力净额 &gt; 1000w、近期热门股、涨跌家数</td><td><span class="t-a tag">官方</span></td></tr>
+<tr><td>板块竞价</td><td>验证消息 / 题材是否真有资金响应</td><td>新增竞价异动板块数、竞价爆量倍数、主力净额流入、板块详情内个股集体高开幅度</td><td><span class="t-a tag">官方</span></td></tr>
+<tr><td>涨停委买（20 分后）</td><td><b>最关键窗口</b>：9:20–9:25 委托不可撤单、直接决定开盘价，用于判断资金真实意图</td><td>总涨停委买额排名、20 分后加单排名、按板块聚合看是否形成板块效应</td><td><span class="t-a tag">官方</span></td></tr>
+<tr><td>竞价异动 / 弱转强</td><td>捕捉情绪拐点</td><td>竞价环比倍量、高开幅度、利空后大单撬板、结束重点监控</td><td><span class="t-a tag">官方</span></td></tr>
+</table>
+<div class="note"><b>交易思想上最值得借鉴的一条</b>：官方明确区分「总委买」与「9:20 后不可撤单委买」——前者可以撤单骗线，后者才是真金白银。这与你要求的「封板意愿特别强、不能涨三四个点就推」是同一个思路：<b>只认不可伪造的确认信号</b>。</div>
+
+<h3>2.3 盘中 · 定主线</h3>
+<table>
+<tr><th>功能</th><th>作用</th><th>关键指标 / 页面元素</th><th>可信度</th></tr>
+<tr><td>板块（精选 / 行业 / 地区）</td><td>按强度对板块排序，识别日内爆发方向</td><td>当前强度值、区间净额、区间成交、机构增仓、预测 PE、板块代码、多日统计、板块叠加</td><td><span class="t-a tag">官方截图 + 教程</span></td></tr>
+<tr><td>板块强度</td><td><b>独创指标</b>：结合板块权重个股、涨停数量、人气、成交额、市场情绪多维测算</td><td>强度值上万代表强势（案例：人工智能 23524 / 32 家涨停；日内 9693 → 16963）</td><td><span class="t-a tag">官方</span></td></tr>
+<tr><td>区间统计 / 区间强度</td><td>拖动时间轴选任意区间，看该时段的板块强度、区间涨幅、区间净额、区间成交</td><td>历史统计按钮、分时图下方时间轴、按强度 / 净额 / 涨幅 / 成交额排序</td><td><span class="t-a tag">官方</span></td></tr>
+<tr><td>市场情绪</td><td>评估人气与量能</td><td>数据分析 + 股票列表两栏；竞价 / 涨停 / 炸板 / 跌停 / 自然涨停 / 曾跌停数量；市场量能实际值 + 日内预测量能；北向资金</td><td><span class="t-a tag">官方</span></td></tr>
+<tr><td>涨停表现</td><td>连板梯队与晋级率</td><td>一板 / 二板 / 三板 / 高位数量、晋级率、市场梯队表现</td><td><span class="t-a tag">官方</span></td></tr>
+<tr><td>实时龙虎榜 / 深度龙虎榜</td><td>动态追踪主力大单资金，回溯历史资金动向</td><td>按区间净额 / 区间涨幅 / 区间成交额排序、2 分钟成交额、5 分钟区间成交额、时间轴回溯、游资席位</td><td><span class="t-a tag">官方</span></td></tr>
+<tr><td>大盘直播</td><td>文字直播实时点评热门板块个股</td><td>时间轴 + 关键节点解读（如 09:26 算力竞价弱势、DeepSeek 延续强势）</td><td><span class="t-a tag">官方</span></td></tr>
+<tr><td>市场风口 / 市场雷达 / 尾盘抢筹</td><td>监控最活跃个股、自动上榜</td><td>主力买入 / 主力卖出 / 主力净额</td><td><span class="t-c tag">第三方整理</span></td></tr>
+<tr><td>异动提醒</td><td>严重异动、个股卡异动、结束重点监控</td><td>异动标签、冲击异动、热门股偏离值、严重异动监控</td><td><span class="t-a tag">官方</span></td></tr>
+<tr><td>特色标签</td><td>不按传统一级行业，按市场语义精选板块 + 选股标签</td><td>人气核心、人气激增、最正宗、机构增仓；打板页 tab：即将涨停 / 风向标 / 涨停 / 炸板</td><td><span class="t-a tag">官方</span></td></tr>
+<tr><td>板块叠加 / 板块详情</td><td>从龙头到补涨挖掘潜力股</td><td>板块领涨先锋、板块内联动性、所属板块集中度</td><td><span class="t-a tag">官方</span></td></tr>
+</table>
+
+<h3>2.4 盘后 · 做复盘</h3>
+<table>
+<tr><th>功能</th><th>作用</th><th>关键指标 / 页面元素</th><th>可信度</th></tr>
+<tr><td>复盘啦</td><td>当日盘面亮点梳理、各板块核心个股整合、炒作高度梯队</td><td>盘面梳理 / 市场动向 / 涨停原因、盘面亮点、亏钱效应、大幅回撤</td><td><span class="t-a tag">官方</span></td></tr>
+<tr><td>涨停天梯</td><td>连板梯队完整度</td><td>连板高度、梯队完整度、各层级个股数量、封板时间、所属板块集中度、板块内联动性</td><td><span class="t-a tag">官方</span></td></tr>
+<tr><td>涨停原因</td><td>解释「为什么涨停」</td><td>催化剂、涨停原因标签、封单、成交额</td><td><span class="t-a tag">官方</span></td></tr>
+<tr><td>区间统计（复盘用法）</td><td>多日连续对比，过滤一日游</td><td>连续 3 日区间强度排名、区间净额是否持续流入；「单日强度走高不足以定主线」</td><td><span class="t-a tag">官方</span></td></tr>
+<tr><td>文章系统 / 一图复盘</td><td>内容沉淀与教学</td><td>开盘早知道、午间视频直播、涨停板复盘、一图复盘、龙虎榜中榜、北向资讯</td><td><span class="t-c tag">第三方应用市场</span></td></tr>
+</table>
+
+<h3>2.5 数据工具与个性化</h3>
+<table>
+<tr><th>功能</th><th>说明</th><th>可信度</th></tr>
+<tr><td>我的版面</td><td>整合常用看盘功能，版面设置里 ON/OFF 控制显隐、长按拖动排序、保存设置；自选股 / 市场情绪 / 涨停表现按需排列；2024 年新增「我的版面-早盘竞价」</td><td><span class="t-a tag">官方大事记</span> + <span class="t-b tag">应用宝</span></td></tr>
+<tr><td>股票分类 / 自选股宫格</td><td>按自定义分类管理；手机宫格模式多股 K 线并列</td><td><span class="t-b tag">应用市场</span></td></tr>
+<tr><td>商品现货 / 全球商品 / 汇率 / 外围指数</td><td>跨市场参考</td><td><span class="t-b tag">应用市场</span></td></tr>
+<tr><td>区间统计（按股票 / 按板块）</td><td>任意区间个股或板块涨幅、强度、净额</td><td><span class="t-a tag">官方</span></td></tr>
+<tr><td>沪深港通 / 北向资金时间轴 / 公告中心 / 大宗交易 / 股东变更 / 业绩披露 / ETF 基金</td><td>各类数据入口，首页工具栏可横向滑动</td><td><span class="t-c tag">第三方整理</span></td></tr>
+<tr><td>开盘啦人气榜 / 顶级游资 / 知名游资</td><td>盘中人气榜、复盘人气榜、游资跟踪</td><td><span class="t-c tag">第三方整理</span></td></tr>
+</table>
+
+<h2>三、页面设计拆解</h2>
+
+<h3>3.1 首页：ICON 宫格 + 分区信息流，不是底部 Tab 为主</h3>
+<div class="card">
+<p>根据官方功能位置描述与第三方功能导图，首页结构大致为：</p>
+<ul>
+<li><b>顶部区</b>：扫一扫、搜索、状态 / 个人中心入口；工具栏可<b>横向滑动</b>装载大量 ICON（区间统计、异动提醒、机构增仓、百日新高、互动易、公告中心、沪深港通…）。</li>
+<li><b>ICON 导航区</b>：市场情绪、涨停表现、打板、大盘直播、复盘啦、实时龙虎榜、区间统计、题材库等核心入口平铺。</li>
+<li><b>banner 区</b>：图片轮播 + 推荐文章。</li>
+<li><b>题材库区</b>：首页内嵌热点题材排行，「更多」进入题材库主界面。</li>
+<li><b>底部导航</b>：自选 / 行情 / 龙虎榜 / 发现 / 我的（第三方描述，<b>未在官方页面完全确认，不作为定论</b>）。</li>
+<li><b>我的版面悬浮按钮</b>：首页左侧，进入自定义版面。</li>
+</ul>
+<p class="kv"><b>设计意图</b>：短线用户一天要在 10+ 个工具间来回切，所以首页做成「工具启动器」而非内容流；把模块显隐与排序权交给用户，避免为低频功能付出导航成本。</p>
+</div>
+
+<h3>3.2 板块 / 历史统计页（官方真实截图逐项解读）</h3>
+<img class="shot" src="./kpl_board_ui.png" alt="开盘啦官方教程截图：板块历史统计界面">
+<div class="grid">
+<div class="card">
+<h3>顶部三层</h3>
+<ul>
+<li><b>红色标题栏</b>：返回箭头、标题「板块」+ 帮助 <code>?</code>、右侧搜索图标。红色为品牌色，全页仅此一处大面积使用。</li>
+<li><b>指数状态条</b>：沪 3932.70 / 2.58 / 0.07%；中间日期 <code>2026-09-07</code> + 日历图标 + 左右箭头切日；右侧「多日统计」「板块叠加」两个图标入口。</li>
+<li><b>维度 Tab</b>：精选 / 行业 / 地区，当前「精选」用红色文字 + 下划线。</li>
+</ul>
+</div>
+<div class="card">
+<h3>主表：密度优先</h3>
+<ul>
+<li>表头：<b>板块 | 当前强度 ↓ | 区间净额 | 区间成交 | 第二季度机构增仓 | 2026E 平均 PE | 2027E 平均 PE</b>，列名带排序小箭头。</li>
+<li>首列双行：板块名 + 6 位板块代码（通信 801660、光模块 801206、机器人概念 801159、算力 801807…）。</li>
+<li>红框强调「当前强度」列：10038 / 5471 / 7541 / 4622 / 2072…；右屏为同一时点的负值榜：−672 保险、−630 银行、−413 医药、−341 证券…</li>
+<li><b>红涨绿跌</b>：正净额红色（217.5 亿、110.3 亿），负净额绿色（−24.44 亿、−135.4 亿）。中国习惯，与你工作台一致。</li>
+</ul>
+</div>
+<div class="card">
+<h3>底部：时间轴即筛选器</h3>
+<ul>
+<li>约 1/3 屏高为深色底分时图区，并列 <b>沪 / 深 / 创</b> 三条分时，各带点位、涨跌、涨幅、成交额。</li>
+<li>时间轴刻度 09:25 / 10:15 / 11:30 / 15:00；蓝色半透明高亮区间 + 蓝色箭头指示可拖动边界（图中 09:25–10:15）。</li>
+<li>右下「历史统计」按钮；拖动区间后，上方表格的<b>当前强度 / 区间净额 / 区间成交立即变为该时段的统计值</b>。</li>
+</ul>
+</div>
+<div class="card">
+<h3>设计意图</h3>
+<ul>
+<li>把「选时段」与「看板块」放在<b>同一屏</b>，不弹窗、不跳页，避免切换维度时丢失上下文。</li>
+<li>表格列全部是可排序数值，<b>排序本身就是筛选</b>：想找强势板块就按强度降序，想找资金流出就翻到负值端。</li>
+<li>左右双屏对照（正值榜 / 负值榜）说明它鼓励同时看「谁在吸金」和「谁在失血」。</li>
+</ul>
+</div>
+</div>
+
+<h3>3.3 题材库：搜索 → 热点榜 → 题材介绍 → 小表格下钻</h3>
+<div class="card">
+<p><b>路径</b>：首页 - 题材库 - 更多 → 题材库主界面。</p>
+<ul>
+<li><b>顶部</b>：搜索栏，输入关键字查对应小表格。</li>
+<li><b>热点板块排序区</b>：右上「按热度 / 按涨幅」切换；「持续火爆」标记（近期热度持续前五）；当日突发板块给「上升名次幅度 + 红色小箭头」；题材名后<b>红色小方块内数字 = 该小表格内个股涨停数量</b>，无涨停则不标。</li>
+<li><b>题材介绍页</b>：「查看全文」看题材新闻与介绍；下方小表格列相关个股与基本面；大板块有<b>多级子分支</b>（例：固态电池 → 电解质研发 / 电池正极；DeepSeek → 云平台 / 端侧应用 / 部署适配 / 昇腾一体机），可看涨停或大涨个股在分支里的分布。</li>
+</ul>
+<p class="kv"><b>设计意图</b>：把「今天炒什么」和「炒这条线的哪一节」压到两次点击内；涨停数红方块让用户不点进去就知道热度。</p>
+</div>
+
+<h3>3.4 其余页面的信息架构</h3>
+<table>
+<tr><th>页面</th><th>结构</th><th>交互核心</th></tr>
+<tr><td>早盘 / 板块竞价</td><td>模块卡片：涨停委买额排名、20 分后委买、竞价爆量板块、主力净额 &gt; 1000w、近期热门股、涨跌家数</td><td>按指标排序 → 点板块进详情看成分股集体高开；强调「有无板块效应」而非单票异动</td></tr>
+<tr><td>市场情绪</td><td>上/下两栏：<b>数据分析</b>（市场量能实际 + 预测量能、涨停表现、晋级率、昨日破板今表现）与<b>股票列表</b>（竞价 / 涨停 / 炸板 / 跌停 / 自然涨停 / 曾跌停，各类型数量直接标在 tab 上）</td><td>tab 即数量对比；涨停列表按封板时间排序判断「板块里第几个板、龙一龙二龙三」</td></tr>
+<tr><td>复盘啦</td><td>盘面梳理 / 市场动向 / 涨停原因 + 盘面亮点 + 涨停天梯 + 亏钱效应 + 大幅回撤</td><td>异动标签筛选、按标签归类；次日行情验证复盘判断</td></tr>
+<tr><td>打板</td><td>tab：即将涨停 / 风向标 / 涨停 / 炸板；涨停时看行情、涨速、封单，跌停时看开板时间</td><td>状态 tab 切换，配合特色标签（一字加速、权重拉升、反包板、换手板）</td></tr>
+<tr><td>我的版面</td><td>版面设置列表，每项一个 ON/OFF 开关 + 拖动把手</td><td>长按拖动排序 → 保存设置 → 首页按个人顺序渲染模块</td></tr>
+</table>
+
+<h3>3.5 提炼出的 8 条设计原则</h3>
+<div class="grid">
+<div class="card"><b>1. 按时间组织，不按数据类型组织</b><p class="kv">用户脑子里是「现在几点该干什么」，不是「我要查哪张表」。</p></div>
+<div class="card"><b>2. 一屏一决策，表格密度优先</b><p class="kv">宁可字小、列多，也要让排序结果一屏可见；不做留白很多的卡片瀑布流。</p></div>
+<div class="card"><b>3. 排序即筛选</b><p class="kv">任何数值列都可点表头排序，正负两端都是有效信息。</p></div>
+<div class="card"><b>4. 标记代替解释</b><p class="kv">红方块、红箭头、持续火爆、特色标签，用最小视觉成本标注「为什么看它」。</p></div>
+<div class="card"><b>5. 时间轴是全局控件</b><p class="kv">区间统计、实时龙虎榜、北向资金共用「拖动选时段 → 表格重算」范式。</p></div>
+<div class="card"><b>6. 严格两级下钻</b><p class="kv">榜 → 详情 → 个股，不做三级以上嵌套；题材库的多级分支是唯一例外。</p></div>
+<div class="card"><b>7. 先验资金、再谈方向</b><p class="kv">消息只给候选，竞价委买 / 板块净额才算确认；只认不可撤单、不可伪造的数据。</p></div>
+<div class="card"><b>8. 版面可配置</b><p class="kv">功能多到一定程度后，把导航成本交还给用户自定义。</p></div>
+</div>
+
+<h2>四、与 market-monitor 工作台对照 · 可借鉴清单</h2>
+<table>
+<tr><th>优先级</th><th>借鉴项</th><th>工作台现状</th><th>数据源可行性</th><th>建议</th></tr>
+<tr><td><span class="t-p0 tag">P0</span></td><td>题材库式「先定方向」</td><td><span class="ok">已有</span>：L0 趋势题材榜（12 个）+ 细分题材引擎 140 题材 / 4020 成分股 + 板块涨停分布按家数优先 + 二级下钻</td><td>东财概念成分股 + 涨停池，已跑通</td><td>补「持续火爆 / 上升名次 / 涨停数红方块」标记；加入分支维度（现为题材 → 成分股两层）</td></tr>
+<tr><td><span class="t-p0 tag">P0</span></td><td>竞价验证层</td><td><span class="no">缺失</span>：09:25 时段无涨停委买 / 板块竞价</td><td><b>需 L2 逐笔委托或竞价快照</b>；腾讯 qt.gtimg.cn 在 09:25 后能取到开盘价与五档，但拿不到 9:20 前后不可撤单委买额的历史分解</td><td>先做「竞价高开 + 竞价量比 + 板块内集体高开家数」的近似版；不编造委买额</td></tr>
+<tr><td><span class="t-p0 tag">P0</span></td><td>临板首板（只推最后一脚）</td><td><span class="ok">已有且更严格</span>：L2 板进度 ≥0.85 + 真实五档封板意愿分 + 2 帧确认 + 排除连板 / ST / 巨量</td><td>腾讯五档盘口实测可用</td><td>与「打板页即将涨停 tab」同构，无需改；可补「距涨停%」进度条可视化</td></tr>
+<tr><td><span class="t-p1 tag">P1</span></td><td>板块强度值 + 多日区间强度</td><td>部分：板块强度用「涨停家数 / 连板梯队 / 涨速 / 资金 / 新闻」加权，但<b>只有当日截面</b></td><td>需落盘每日快照才能算多日区间强度；当前无历史序列</td><td>新建 <code>data/theme_strength_history.jsonl</code>，每 30 分钟追加一行，即可支持 3 日持续排名，过滤一日游</td></tr>
+<tr><td><span class="t-p1 tag">P1</span></td><td>时间轴 + 区间净额 / 涨幅</td><td><span class="no">缺失</span></td><td>需要分钟级板块快照；全 A 帧已是每轮抓取，落盘后可回放</td><td>结合上一项一起做：先落盘，再做可拖动时间轴，避免为了 UI 造数据</td></tr>
+<tr><td><span class="t-p1 tag">P1</span></td><td>涨停天梯 / 连板梯队 / 晋级率</td><td>涨停池已有连板数、按最高连板排序，但无「一板 / 二板 / 三板各几家 + 晋级率」</td><td><span class="ok">现成</span>：涨停池 + 昨日涨停基线 <code>data/prev_zt.json</code>（116 只）</td><td>低成本高收益，建议优先做</td></tr>
+<tr><td><span class="t-p1 tag">P1</span></td><td>涨停原因 / 催化剂</td><td>新闻催化层已有：东财快讯 200 条 / 14 题材命中，但未关联到单只涨停股</td><td>可用现有 <code>news_catalyst.py</code> + 题材标签映射，标注为「题材级催化」而非个股原因</td><td>不编「个股涨停原因」，只给题材级催化标签并写清口径</td></tr>
+<tr><td><span class="t-p1 tag">P1</span></td><td>亏钱效应 / 大幅回撤 / 炸板率</td><td>风险池、炸板率已有数据，但无独立的「亏钱效应」汇总视图</td><td><span class="ok">现成</span></td><td>在复盘页加一条「昨日涨停今表现 / 炸板回撤」状态条</td></tr>
+<tr><td><span class="t-p2 tag">P2</span></td><td>我的版面（ON/OFF + 拖动排序）</td><td>树形导航 6 组 16 视图固定顺序</td><td>纯前端，localStorage 即可</td><td>可先做「常用视图置顶 + 隐藏不看的视图」，不必做完整拖动</td></tr>
+<tr><td><span class="t-p2 tag">P2</span></td><td>特色标签体系</td><td>已有事件标签（火箭 / 涨速 / 板块 / 临板首板等）</td><td>纯展示</td><td>给 L1 低位池加「量能抬头 / 即将冒头 / 收盘低位」标签已做；可补「人气核心」类语义标签</td></tr>
+<tr><td><span class="t-c tag">不建议</span></td><td>明天炒什么（用户投票）、实时龙虎榜席位、深度龙虎榜、机构纪要、商品现货</td><td>—</td><td>需要社区 UGC / 交易所席位明细 / 付费数据源</td><td>不照搬、不用爬虫硬凑；用现有东财快讯 + 主题机会替代「盘前方向」</td></tr>
+</table>
+
+<h2>五、本次调研触发的即时落地（2026-11-06）</h2>
+<div class="card">
+<p class="kv">调研不是纸上谈兵：对照开盘啦的设计，当场发现并修掉工作台三处问题，其中两处属于<b>误导性提示</b>。</p>
+<table>
+<tr><th>调研发现</th><th>工作台问题</th><th>处理</th></tr>
+<tr><td>开盘啦按时间分段，盘前专门有「明天炒什么」给方向，且明确区分竞价 / 盘中 / 盘后</td><td>盘前 09:12 打开工作台，L0 趋势题材全空，且状态条被误写成「当前为收盘定版」</td><td><span class="ok">已修</span>：<code>theme_picker._session_state()</code> 六态判定（preopen / auction / trading / lunch / paused / closed）；新增 <code>overnight_trends()</code>，用<b>昨日涨停 84 只成分股所属题材 + 200 条真实快讯</b>生成隔夜方向榜，前端标「隔夜口径 · 昨涨停」，开盘产生涨停后自动切回实时 L0。</td></tr>
+<tr><td>开盘啦只认不可撤单的确认信号（9:20 后涨停委买），且不把缺失数据伪装成 0</td><td>「昨日涨停基线」因 sprite 未收到首帧而显示 <b>0 只</b>，真实值是 84 只</td><td><span class="ok">已修</span>：<code>/api/sprite</code> 改用 app 层权威缓存覆盖，实测前端正确显示 84 只。</td></tr>
+<tr><td>竞价层依赖 L2 逐笔委托（涨停委买额、9:20 后不可撤单部分、板块竞价爆量）</td><td>工作台 09:15–09:25 无竞价数据</td><td><span class="no">未做，也不假做</span>：不编造委买额；先用「集合竞价」会话态明确标注当前不可用，待有 L2 数据源再补。</td></tr>
+</table>
+<p class="kv"><b>验证</b>：全量 <code>unittest</code> 23 项 OK、全项目 AST 0 错误、两个内联 script <code>node --check</code> OK、<code>theme_picker</code> / <code>news_catalyst</code> / <code>dispatch_diag</code> 三个 <code>--selftest</code> PASS、Playwright 对报告页与工作台控制台 <b>0 error / 0 warning</b>；<code>/api/theme_pick?refresh=1</code> 实测 <code>session=auction</code>、<code>trend_source=overnight</code>、8 个隔夜题材、耗时 0ms。</p>
+</div>
+
+<h2>六、资料可信度与边界声明</h2>
+<div class="card">
+<table>
+<tr><th>等级</th><th>来源</th><th>用途</th></tr>
+<tr><td><span class="t-a tag">官方 · 高</span></td><td>kaipanla.com 关于我们 / 大事记、快速入门、盘前教程 42659、盘中教程 42660、盘后教程 42661、题材库教程 38490、区间强度教程 38493 / 39810、市场情绪教程 37451、官方教程界面截图</td><td>功能名称、指标定义、页面路径、页面结构、设计意图</td></tr>
+<tr><td><span class="t-b tag">应用市场 / 官方转载 · 中</span></td><td>应用宝 FAQ 与 appdetail、微软商店、泡美美等应用介绍页、股票复盘网转载功能说明</td><td>六大特色功能清单、我的版面操作细节、底部导航等补充</td></tr>
+<tr><td><span class="t-c tag">第三方整理 · 参考</span></td><td>微信公众号功能导图、第三方下载站功能列表、百科词条</td><td>首页 ICON 导航区全貌、功能入口位置、辅助性描述</td></tr>
+</table>
+<p class="note"><b>边界</b>：本次为公开资料桌面调研，<b>未实机安装 App</b>。因此：底部导航的确切 tab 数、首页 ICON 的完整排列、2025 年「全新 UI」改版后的实际界面、各指标的具体计算公式与刷新频率，均<b>未获官方确认</b>，报告中已逐项标注，不作为事实使用。部分文章页（38829 / 38492 / 39875）WebFetch 只返回 SPA shell 或「暂无数据，5 秒后跳转」，相关内容改由搜索结果摘要与可访问的同主题官方文章交叉验证。</p>
+</div>
+
+<div class="foot">market-monitor · 开盘啦 App 调研报告 · 生成于 2026-11-06 · 报告仅作产品设计参考，不构成投资建议；文中所有指标与案例均为公开资料引用。</div>
+
+</div>
+</body>
+</html>

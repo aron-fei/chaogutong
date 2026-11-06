@@ -16,12 +16,14 @@ import tempfile
 import time
 from pathlib import Path
 
-sys.path.insert(0, "/Users/williamli/Work/market-monitor")
+BASE_DIR = Path(__file__).resolve().parents[1]
+REPORTS_DIR = Path(__file__).resolve().parents[2] / "reports"
+sys.path.insert(0, str(BASE_DIR))
 import review_gate as rg
 
-REAL_GATE = Path("/Users/williamli/Work/reports/trade_gate.json")
-REAL_EFFECT = Path("/Users/williamli/Work/reports/gate_effectiveness.json")
-REAL_APPLIED = Path("/Users/williamli/Work/reports/trade_gate_applied.json")
+REAL_GATE = REPORTS_DIR / "trade_gate.json"
+REAL_EFFECT = REPORTS_DIR / "gate_effectiveness.json"
+REAL_APPLIED = REPORTS_DIR / "trade_gate_applied.json"
 WATCH = [REAL_GATE, REAL_EFFECT, REAL_APPLIED]
 
 

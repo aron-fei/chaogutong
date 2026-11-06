@@ -25,9 +25,12 @@ import sprite  # M7 短线精灵异动引擎（全局事件流，data_fetcher �
 import mood_engine  # 情绪周期（首板雷达的大盘/情绪闸门）
 import board_rank  # M7 板块榜（腾讯官方 speed 涨速字段，替代失效的 THS 板块涨速）
 import theme_board  # M10 细分题材引擎（东财概念成分股反向索引，2026-11-05）
+import theme_picker  # 2026-11-05 v2：L0 题材趋势 + L1 低位挖掘（纯内存打分）
+import news_catalyst  # 2026-11-05 v2：新闻/传闻催化（东财快讯真实源）
+import dispatch_diag  # 2026-11-05 体检剩余项：零派单根因诊断（只读）
 import bottom_radar  # M8 底部放量雷达（ADR-0033，缓存+后台刷新，扫描整轮 5~6s）
 import position_watch  # M9 持仓实时跟踪（ADR-0034，交易时段逐帧评估持仓 → 分层操作建议+异动）
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import secrets
 import threading
@@ -51,10 +54,18 @@ def _load_access_key():
     try:
         ACCESS_KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
         if ACCESS_KEY_FILE.exists():
+            try:
+                ACCESS_KEY_FILE.chmod(0o600)   # 体检 P3-1：密钥文件仅属主可读写
+            except OSError as e:
+                print(f"[access_key] 收紧权限失败: {e}")
             return json.loads(ACCESS_KEY_FILE.read_text(encoding="utf-8"))["key"]
         key = secrets.token_urlsafe(9)
         ACCESS_KEY_FILE.write_text(
             json.dumps({"key": key}, ensure_ascii=False, indent=2), encoding="utf-8")
+        try:
+            ACCESS_KEY_FILE.chmod(0o600)
+        except OSError as e:
+            print(f"[access_key] 收紧权限失败: {e}")
         return key
     except Exception as e:
         print(f"[access_key] 读取失败回退默认: {e}")
@@ -160,6 +171,108 @@ def _sprite_market_gate():
 
 
 sprite.instance().set_market_gate_provider(_sprite_market_gate)
+
+# ============================================================================
+# 2026-11-05 首板雷达 v2：L0 / L1 策略依赖
+# 全部走「低频后台刷新 + 内存只读」，绝不阻塞 20s 一轮的全A帧。
+# ============================================================================
+nc = news_catalyst.instance()          # 新闻 / 传闻催化（东财快讯真实源）
+_trend_lock = threading.Lock()
+_trend_names = []
+_prev_zt_lock = threading.Lock()
+_prev_zt_cache = {"date": "", "source_date": "", "codes": []}
+PREV_ZT_FILE = config.BASE_DIR / "data" / "prev_zt.json"
+
+
+def _prev_zt_codes():
+    """供 L2 排除连板接力：只读内存。取不到时返回空集（fail-open，不编造）。"""
+    with _prev_zt_lock:
+        return set(_prev_zt_cache["codes"])
+
+
+def _trend_names_provider():
+    with _trend_lock:
+        return list(_trend_names)
+
+
+def _refresh_trend_names():
+    """每 60s 重算 L0 趋势题材名，供 L2 事件打标签（不重算全A快照）。"""
+    global _trend_names
+    try:
+        groups = _build_zt_theme_groups(md.snapshot(), brank.snapshot())
+        names = [x["name"] for x in theme_picker.rank_trends(groups, heat=nc.heat())]
+        with _trend_lock:
+            _trend_names = names
+    except Exception as e:
+        print(f"[strategy] 趋势题材刷新失败: {type(e).__name__}: {e}")
+
+
+def _refresh_prev_zt():
+    """每日取上一交易日涨停池 → 排除「连板接力」（不是当天第一次涨停）。
+
+    网络失败时保留旧缓存；完全没有则留空并在 /api/health 标注，绝不编造。
+    """
+    today = datetime.now().strftime("%Y%m%d")
+    with _prev_zt_lock:
+        if _prev_zt_cache["date"] == today and _prev_zt_cache["codes"]:
+            return
+    try:
+        if PREV_ZT_FILE.exists():
+            d = json.loads(PREV_ZT_FILE.read_text(encoding="utf-8"))
+            if d.get("date") == today and d.get("codes"):
+                with _prev_zt_lock:
+                    _prev_zt_cache.update(d)
+                return
+    except Exception as e:
+        print(f"[strategy] 读昨日涨停缓存失败: {type(e).__name__}: {e}")
+    try:
+        import akshare as ak
+        day = datetime.now() - timedelta(days=1)
+        for _ in range(8):
+            if day.weekday() >= 5:
+                day -= timedelta(days=1)
+                continue
+            ds = day.strftime("%Y%m%d")
+            try:
+                df = ak.stock_zt_pool_em(date=ds)
+            except Exception as e:
+                print(f"[strategy] 涨停池 {ds} 拉取失败: {type(e).__name__}: {e}")
+                day -= timedelta(days=1)
+                continue
+            if df is not None and len(df):
+                codes = sorted({str(c).strip().zfill(6)
+                                for c in df["代码"].astype(str).tolist()})
+                data = {"date": today, "source_date": ds, "codes": codes}
+                with _prev_zt_lock:
+                    _prev_zt_cache.update(data)
+                PREV_ZT_FILE.parent.mkdir(parents=True, exist_ok=True)
+                PREV_ZT_FILE.write_text(json.dumps(data, ensure_ascii=False),
+                                        encoding="utf-8")
+                print(f"[strategy] 昨日涨停基线 {ds}: {len(codes)} 只")
+                return
+            day -= timedelta(days=1)
+        print("[strategy] 近 8 天未取到涨停池，首板基线暂空（fail-open，不编造）")
+    except Exception as e:
+        print(f"[strategy] 昨日涨停基线失败: {type(e).__name__}: {e}")
+
+
+def _strategy_worker():
+    # 启动首分钟每 10s 刷一次（此时板块榜/涨停池刚就绪，避免题材标签空窗），之后 60s
+    tick = 0
+    while True:
+        _refresh_trend_names()
+        _refresh_prev_zt()
+        tick += 1
+        time.sleep(10 if tick < 6 else 60)
+
+
+def start_strategy():
+    threading.Thread(target=_strategy_worker, name="strategy-v2", daemon=True).start()
+    nc.start()
+
+
+sprite.instance().set_prev_zt_provider(_prev_zt_codes)
+sprite.instance().set_trend_provider(_trend_names_provider)
 
 # M9 持仓实时跟踪（ADR-0034）：
 #  ①持仓来源 = 50 万模拟盘 backtest_database.json（策略建议的短线持仓，只读）
@@ -490,7 +603,66 @@ def api_sprite():
     snap = sprite.instance().snapshot(since=since, limit=limit)
     snap["board_rank_at"] = brank.snapshot().get("last_update")
     snap["board_total"] = len(brank.snapshot().get("boards") or [])
+    # 盘前/收盘没有全 A 帧喂入时，sprite 内部基线尚未刷新。用 app 层权威缓存覆盖，
+    # 避免前端把「昨日涨停基线」显示成 0 只（真实 84 只）造成误导。
+    fb = snap.setdefault("fb", {})
+    fb["prev_zt_count"] = len(_prev_zt_codes())
+    fb["prev_zt_day"] = _prev_zt_cache.get("source_date", "")
+    fb["trends"] = _trend_names_provider()[:12] or fb.get("trends") or []
     return jsonify(snap)
+
+
+@app.route("/api/dispatch_diag")
+def api_dispatch_diag():
+    """体检剩余项：把「报告 ready 但零派单」从黑盒变成逐时段可自查的结论。只读。"""
+    payload, code = _cached("dispatch_diag", 60, dispatch_diag.diagnose)
+    return jsonify(payload), code
+
+
+@app.route("/api/theme_pick")
+def api_theme_pick():
+    """首板雷达 v2：L0 趋势题材榜 + L1 低位挖掘观察池。
+
+    全部复用已缓存数据（涨停池分组 / 全A帧 / 题材成分股 / 快讯催化），
+    纯内存打分零额外行情请求；TTL 30s，?refresh=1 强制重算。
+    """
+    force = request.args.get("refresh") in ("1", "true", "yes")
+
+    def produce():
+        snap = md.snapshot()
+        groups = _build_zt_theme_groups(snap, brank.snapshot())
+        rows, rows_at = md.get_full_rows()
+        zt_codes = {str(s.get("code") or "").strip().zfill(6)
+                    for s in (snap.get("zt_pool_all") or []) if s.get("code")}
+        zb_codes = {str(s.get("code") or "").strip().zfill(6)
+                    for s in (snap.get("zb_pool") or []) if s.get("code")}
+        avoid = zt_codes | zb_codes | _prev_zt_codes()
+        payload = theme_picker.pick(
+            groups, rows, tboard, heat=nc.heat(),
+            avoid_codes=avoid, zt_codes=zt_codes,
+            news_state=nc.snapshot(), theme_state=tboard.snapshot(), rows_at=rows_at)
+        # 盘前/盘后当日涨停池为空 → L0 全空，用户打开看不到方向。
+        # 用「昨日涨停成分股所属题材 + 真实快讯」给隔夜方向榜，明确标注口径，
+        # 不冒充当日 L0 趋势、不编造数据；开盘产生涨停后自动切回实时榜。
+        sess = (payload.get("meta") or {}).get("session")
+        if (not (payload.get("trends") or []) and not groups
+                and sess in ("preopen", "auction", "lunch", "closed")):
+            try:
+                ov = theme_picker.overnight_trends(_prev_zt_codes(), tboard, heat=nc.heat())
+            except Exception as e:
+                ov = []
+                print(f"[theme_pick] 隔夜榜失败: {type(e).__name__}: {e}")
+            if ov:
+                payload["trends"] = ov
+                meta = payload.setdefault("meta", {})
+                meta["trend_count"] = len(ov)
+                meta["trend_source"] = "overnight"
+                meta["trend_note"] = ("昨日涨停成分股所属题材 + 近 4 小时真实快讯，"
+                                      "不是当日 L0 趋势；开盘产生涨停后自动切换为实时榜")
+        return payload
+
+    payload, code = _cached("theme_pick", 30, produce, force=force)
+    return jsonify(payload), code
 
 
 @app.route("/api/bottom_surge")
@@ -1255,6 +1427,17 @@ def api_health():
         out["gate"] = review_gate.health() if hasattr(review_gate, "health") else "n/a"
     except Exception as e:
         out["gate"] = {"error": f"{type(e).__name__}: {e}"}
+    try:
+        out["first_board"] = {
+            "v2": getattr(config, "FB_V2_ENABLED", False),
+            "news": nc.snapshot(),
+            "sprite": sprite.instance().snapshot(limit=1).get("fb") or {},
+            "prev_zt": {"count": len(_prev_zt_codes()),
+                        "source_date": _prev_zt_cache.get("source_date")},
+            "trends": _trend_names_provider()[:8],
+        }
+    except Exception as e:
+        out["first_board"] = {"error": f"{type(e).__name__}: {e}"}
     return jsonify(out)
 
 
@@ -1309,6 +1492,8 @@ if __name__ == "__main__":
     fadv.start()   # M6：期货超短顾问（主力探测+实时/分时+快讯线程）
     brank.start()  # M7：板块榜（腾讯官方涨速 → 短线精灵板块/概念涨速事件）
     tboard.start()  # M10：细分题材反向索引（缓存命中则跳过，失败降级行业兜底）
+    start_strategy()  # 首板雷达 v2：趋势题材 / 昨日涨停基线 / 快讯催化（后台低频）
+    bottom_radar.instance().warm()  # 体检剩余项：预热慢接口，首个请求不再阻塞 13s
     pwatch.start() # M9：持仓实时跟踪（交易时段逐帧评估 50 万模拟盘持仓 → 分层建议+异动）
     app.run(host=config.HOST, port=config.PORT,
             debug=False, threaded=True, use_reloader=False)

@@ -68,6 +68,10 @@ class BottomRadar:
             return True    # 判断失败时按交易中处理，宁可多刷
 
     # ---------------- 对外 ----------------
+    def warm(self):
+        """服务启动后后台预热一次，避免首个 HTTP 请求撞上整轮扫描。"""
+        threading.Thread(target=self._refresh, daemon=True).start()
+
     def snapshot(self, force=False):
         """返回可直接 jsonify 的 dict。force=True 时同步刷新（用户点「立即刷新」）。"""
         if force:
@@ -76,12 +80,10 @@ class BottomRadar:
             age = time.time() - self._ts
             need = (self._ts == 0.0) or (age > CACHE_TTL and self._in_trading())
             if need:
-                if self._ts == 0.0:
-                    # 首次访问：同步跑一次，避免前端拿到空表
-                    self._refresh(sync=True)
-                else:
-                    # 已有旧快照：立即返回，后台补新
-                    threading.Thread(target=self._refresh, daemon=True).start()
+                # 2026-11-05 体检剩余项：首次访问也走后台，绝不在 HTTP 请求里同步跑
+                # 整轮扫描（实测服务重启后首个请求 13.1s）。服务启动时已 warm() 预热；
+                # 即使未预热，返回 init + retry_after，前端下一轮轮询即可拿到数据。
+                threading.Thread(target=self._refresh, daemon=True).start()
 
         with self._lock:
             age = (time.time() - self._ts) if self._ts else None
@@ -92,6 +94,7 @@ class BottomRadar:
                 "stale": bool(age is not None and age > CACHE_TTL),
                 "age_sec": round(age, 1) if age is not None else None,
                 "cache_ttl": CACHE_TTL,
+                "retry_after": 3 if self._rows is None else None,
                 "meta": self._meta or {},
                 "rows": self._rows or [],
                 "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
