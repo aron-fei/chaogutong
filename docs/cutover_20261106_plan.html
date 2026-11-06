@@ -53,7 +53,7 @@ ul{margin:6px 0;padding-left:22px}li{margin:4px 0}
 <ol>
 <li>已按你的指令完成<b>只读盘点 + DRY_RUN</b>，并写好可逆切割工具 <code>scripts/cutover_data.py</code>：默认 DRY_RUN，<code>--apply</code> 才移动，<code>--rollback</code> 一键还原，<b>全程不 unlink、不删除</b>。</li>
 <li>切割线定为 <b>2026-11-06 00:00</b>：之前的老数据、老候选池、全部缓存切走；今日及之后由新的三层漏斗逻辑重新生成。这正好实现「按新的建议来做」——新序列从今天干净起步。</li>
-<li><b>默认范围命中 3350 个老文件 / 60.4MB</b>，今日 32 个盘中热文件保留，266 个红线文件跳过，红线泄漏复检 <b>0</b>。</li>
+<li><b>推荐方案 A 命中 3258 个老文件 / 58.2MB</b>（<code>.bak</code> 备份按你的铁律保留不动）；若连备份一起切是 3350 个 / 60.4MB。今日 29 个盘中热文件保留，268 个红线文件跳过，红线泄漏复检 <b>0</b>。</li>
 <li>现在是<b>盘中 09:45</b>，今日热文件里有 L0 题材索引、L2 昨日涨停基线、期货 K 线，切了会打断正在跑的策略 —— 这是<b>唯一需要你拍板的岔路口</b>。</li>
 <li>完整逐文件清单已导出 <code>docs/cutover_20261106_dryrun.csv</code>（3382 行，含路径/分类/大小/时间），可逐条核对。</li>
 </ol>
@@ -65,11 +65,11 @@ ul{margin:6px 0;padding-left:22px}li{margin:4px 0}
 <tr><td>K 线缓存 <code>data/bottom_kline_cache/</code> · <code>watchlist_cache/</code></td><td>2465</td><td>29.1 MB</td><td>3</td><td><span class="tag t-ok">是</span></td><td>纯机器重建，最老 09-01，是体积主力</td></tr>
 <tr><td>跨项目历史报告 <code>reports/</code></td><td>736</td><td>18.3 MB</td><td>~15</td><td><span class="tag t-warn">需 --include-reports</span></td><td>老 pro_report / .txt / .log，827 个老文件中剔除状态类后的部分</td></tr>
 <tr><td>验证截图 <code>.verify_shots/</code> 等</td><td>52</td><td>10.8 MB</td><td>4</td><td><span class="tag t-warn">需 --include-shots</span></td><td>历次验收截图，可重建</td></tr>
-<tr><td>备份 <code>*.bak*</code></td><td>91</td><td>2.1 MB</td><td>4</td><td><span class="tag t-no">默认不动</span></td><td>你的铁律「大改前备份」，需显式 --include-bak</td></tr>
+<tr><td>备份 <code>*.bak*</code></td><td>91</td><td>2.1 MB</td><td>4</td><td><span class="tag t-no">推荐方案保留</span></td><td>你的铁律「大改前备份、备份不入库但也不自动删」；只有显式 --include-bak 才切</td></tr>
 <tr><td>运行时数据 / 老候选池</td><td>6</td><td>73.8 KB</td><td>9</td><td><span class="tag t-ok">老文件切</span></td><td><code>bottom_surge_latest.json</code>（老候选池结果）、<code>a_codes.json</code>、期货映射等</td></tr>
 <tr><td>用户资产 / 状态（红线）</td><td>266</td><td>—</td><td>3</td><td><span class="tag t-no">永不切</span></td><td>见第三节</td></tr>
 </table>
-<p class="kv">默认 DRY_RUN（不带任何 flag）只切 K 线缓存 + 老运行时数据：<b>2471 个 / 29.1MB</b>；加三个 flag 后为 <b>3350 个 / 60.4MB</b>；再加 <code>--include-today</code> 为 <b>3382 个 / 约 94MB</b>。</p>
+<p class="kv">默认 DRY_RUN（不带任何 flag）只切 K 线缓存 + 老运行时数据：<b>2471 个 / 29.1MB</b>；<b>推荐方案 A</b>（<code>--include-reports --include-shots</code>，不含备份）为 <b>3258 个 / 58.2MB</b>；再加 <code>--include-bak</code> 为 3350 个 / 60.4MB；再加 <code>--include-today</code> 为 3382 个 / 约 94MB。CSV 清单导出的是最全集合，便于逐条核对。</p>
 
 <h2>二、红线清单（任何参数下都不切割）</h2>
 <table>
@@ -88,7 +88,7 @@ ul{margin:6px 0;padding-left:22px}li{margin:4px 0}
 <h2>三、盘中风险（现在 09:45，连续竞价中）</h2>
 <div class="card">
 <ul>
-<li><b>今日热文件默认保留（32 个）</b>：<code>theme_cons_cache.json</code>（146 题材 / 4621 成分股，L0+L1 依赖）、<code>prev_zt.json</code>（昨日涨停 84 只，L2 用它排除连板接力）、<code>news_catalyst_cache.json</code>（快讯）、<code>fut_kline_cache.json</code>（20.4MB）、<code>gene_board.json</code>、今日验收截图。</li>
+<li><b>今日热文件默认保留（29 个，方案 A 口径）</b>：<code>theme_cons_cache.json</code>（146 题材 / 4621 成分股，L0+L1 依赖）、<code>prev_zt.json</code>（昨日涨停 84 只，L2 用它排除连板接力）、<code>news_catalyst_cache.json</code>（快讯）、<code>fut_kline_cache.json</code>（20.4MB）、<code>gene_board.json</code>、今日验收截图。</li>
 <li>若强行切 <code>prev_zt.json</code>：L2 会短暂 fail-open，<b>可能误推连板接力票</b>，与你「只打首板」的原则冲突。</li>
 <li>若强行切 <code>theme_cons_cache.json</code>：题材索引需重新并发拉东财概念成分股，L0/L1 会有分钟级空窗。</li>
 <li>切 <code>reports/</code> 周边老报告会削弱历史复盘 / 回溯能力，但<b>不影响当日调度</b>（状态类已列红线）。</li>
@@ -99,21 +99,21 @@ ul{margin:6px 0;padding-left:22px}li{margin:4px 0}
 <h2>四、三个方案（请拍板一个）</h2>
 <table>
 <tr><th>方案</th><th>范围</th><th>文件 / 体积</th><th>时机</th><th>影响</th></tr>
-<tr><td><b>A · 按日期归档切割</b> <span class="tag t-rec">推荐</span></td><td>老数据全切（含 reports / 截图 / bak）；今日热数据保留</td><td>3350 / 60.4MB</td><td><b>现在就能安全执行</b></td><td>盘中零中断；归档可回滚；收盘后可再跑一次切今日文件</td></tr>
-<tr><td><b>B · 全切（含今日）</b></td><td>A + 今日 32 个热文件</td><td>3382 / ~94MB</td><td><b>必须等收盘 15:05 后</b></td><td>需停服务 → 切 → 重启重建；期间约 1–2 分钟空窗，L2 基线短暂 fail-open</td></tr>
+<tr><td><b>A · 按日期归档切割</b> <span class="tag t-rec">推荐</span></td><td>老数据全切（K线缓存 + 老候选池 + reports 老报告 + 验证截图），<b>.bak 备份按铁律保留</b>；今日热数据保留</td><td>3258 / 58.2MB</td><td><b>现在就能安全执行</b></td><td>盘中零中断；归档可回滚；收盘后可再跑一次切今日文件</td></tr>
+<tr><td><b>B · 全切（含今日）</b></td><td>A + 今日 29 个热文件（+ 可选 .bak）</td><td>3290 / ~79MB</td><td><b>必须等收盘 15:05 后</b></td><td>需停服务 → 切 → 重启重建；期间约 1–2 分钟空窗，L2 基线短暂 fail-open</td></tr>
 <tr><td><b>C · 只切纯缓存</b></td><td>仅 K 线缓存 + tmp，不动 reports / bak / 截图 / 老候选池</td><td>2471 / 29.1MB</td><td>现在</td><td>最保守，但「一切缓存都切割」执行不彻底</td></tr>
 </table>
 <p class="kv">三个方案都走同一个工具、同一份 MANIFEST，随时可 <code>--rollback</code>。区别只在 flag 组合与执行时机。</p>
 
 <h2>五、执行与回滚命令</h2>
-<pre># 方案 A（推荐）
+<pre># 方案 A（推荐，不含 .bak 备份）
 /opt/homebrew/anaconda3/bin/python3 scripts/cutover_data.py \
-  --include-reports --include-bak --include-shots --apply
+  --include-reports --include-shots --apply
 
 # 方案 B（收盘后，先停服务）
 lsof -ti :8765 | head -1 | xargs kill -9
 /opt/homebrew/anaconda3/bin/python3 scripts/cutover_data.py \
-  --include-reports --include-bak --include-shots --include-today --apply
+  --include-reports --include-shots --include-today --apply
 # launchd 会自动拉起服务并重建缓存
 
 # 方案 C
