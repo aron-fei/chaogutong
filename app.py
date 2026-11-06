@@ -644,9 +644,10 @@ def api_theme_pick():
         # 盘前/盘后当日涨停池为空 → L0 全空，用户打开看不到方向。
         # 用「昨日涨停成分股所属题材 + 真实快讯」给隔夜方向榜，明确标注口径，
         # 不冒充当日 L0 趋势、不编造数据；开盘产生涨停后自动切回实时榜。
-        sess = (payload.get("meta") or {}).get("session")
-        if (not (payload.get("trends") or []) and not groups
-                and sess in ("preopen", "auction", "lunch", "closed")):
+        # 「当日涨停池为空」的整个窗口（盘前、竞价、开盘初期尚未有涨停）都保留隔夜方向，
+        # 口径由 trend_source / trend_note 与前端「昨涨停」列头明确标注，不会冒充当日趋势。
+        # 出现真实涨停 → groups 非空 → 自动切回实时 L0，无需按会话态硬切。
+        if not (payload.get("trends") or []) and not groups:
             try:
                 ov = theme_picker.overnight_trends(_prev_zt_codes(), tboard, heat=nc.heat())
             except Exception as e:
@@ -657,8 +658,8 @@ def api_theme_pick():
                 meta = payload.setdefault("meta", {})
                 meta["trend_count"] = len(ov)
                 meta["trend_source"] = "overnight"
-                meta["trend_note"] = ("昨日涨停成分股所属题材 + 近 4 小时真实快讯，"
-                                      "不是当日 L0 趋势；开盘产生涨停后自动切换为实时榜")
+                meta["trend_note"] = ("当日尚无涨停池数据，方向来自「昨日涨停成分股所属题材 + 近 4 小时真实快讯」，"
+                                      "不是当日 L0 趋势；出现真实涨停后自动切换为实时榜")
         return payload
 
     payload, code = _cached("theme_pick", 30, produce, force=force)
