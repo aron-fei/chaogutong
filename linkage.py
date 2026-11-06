@@ -10,6 +10,7 @@ data/fut_sector_map.json），为 A 股第 14 tab「🌐 联动观察」提供�
 无独立线程 — 前端 30s 轮询 /api/linkage，即时聚合（各 fetcher 内部已缓存）。
 """
 import os
+import sys
 for _k in ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY",
            "all_proxy", "ALL_PROXY"]:
     os.environ.pop(_k, None)
@@ -25,7 +26,21 @@ _MAX_ERR = 5
 
 
 def _load(name):
-    return json.loads((_MAP_DIR / name).read_text(encoding="utf-8"))
+    """容错加载映射表：缺失/损坏时返回空 dict 并打印告警，不让整个 app 导入期崩溃。
+
+    历史教训（2026-11-06 cutover）：data/us_a_map.json / fut_sector_map.json 是静态参考
+    映射表，被误归档后 linkage 在导入期硬读 → FileNotFoundError 拖垮整个 Flask 启动。
+    改为容错后，即使映射文件缺失也只影响「联动观察」单接口，而非全站宕机。
+    """
+    try:
+        return json.loads((_MAP_DIR / name).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        print(f"[linkage] 警告：映射表 {name} 缺失，联动观察将返回空数据（不影响其余功能）",
+              file=sys.stderr)
+        return {}
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"[linkage] 警告：映射表 {name} 解析失败：{e}", file=sys.stderr)
+        return {}
 
 
 US_A_MAP = _load("us_a_map.json")

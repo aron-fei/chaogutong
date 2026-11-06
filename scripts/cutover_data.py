@@ -58,13 +58,20 @@ RED_PREFIX = (
 )
 RED_NAME_CONTAINS = ("access_key", "portfolio", "backtest_database", "slot_status",
                      "trade_gate", "gate_effectiveness", "pending_buy_confirm",
-                     "pending_sell_confirm", "operation_pool", "order_plan")
+                     "pending_sell_confirm", "operation_pool", "order_plan",
+                     # 新逻辑状态文件（cutover 脚本写于趋势池/GJD 接入之前，需显式补红线）
+                     "trend_research", "gjd_etf_base",
+                     # 代码导入期硬读的静态映射表（缺失会让整个 Flask 启动崩，必须保留）
+                     "us_a_map", "fut_sector_map")
 
 # reports 目录（cross-project）里同样要保留的当日/状态类文件
 REPORTS_KEEP_NAME = ("slot_status.json", "trade_gate.json", "trade_gate_current.json",
                      "backtest_database.json", "gate_effectiveness.json",
                      "order_plan_", "pending_buy_confirm_", "pending_sell_confirm_",
                      "operation_pool.json")
+
+# 用户硬性约束：最近 N 天的「时段报告」（pro_report_*）不切，误切影响复盘/对账
+PRO_REPORT_KEEP_DAYS = 3
 
 
 def human(n):
@@ -153,6 +160,12 @@ def collect(args):
                     if any(k in fn for k in REPORTS_KEEP_NAME):
                         continue
                     st = p.stat()
+                    # 用户硬性约束（2026-11-06 15:53）：最近 N 天的「时段报告」
+                    # （pro_report_*.html / .txt，4 时段×日 的权威留存）绝不切，
+                    # 误切会影响复盘与对账。即便带 --include-today 也优先保它们。
+                    if fn.startswith("pro_report") and st.st_mtime >= (cutoff - PRO_REPORT_KEEP_DAYS * 86400):
+                        skipped_hot += 1
+                        continue
                     if st.st_mtime >= cutoff and not args.include_today:
                         skipped_hot += 1
                         continue
