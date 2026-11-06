@@ -100,7 +100,7 @@ ul{margin:6px 0;padding-left:22px}li{margin:4px 0}
 <table>
 <tr><th>方案</th><th>范围</th><th>文件 / 体积</th><th>时机</th><th>影响</th></tr>
 <tr><td><b>A · 按日期归档切割</b> <span class="tag t-rec">推荐</span></td><td>老数据全切（K线缓存 + 老候选池 + reports 老报告 + 验证截图），<b>.bak 备份按铁律保留</b>；今日热数据保留</td><td>3258 / 58.2MB</td><td><b>现在就能安全执行</b></td><td>盘中零中断；归档可回滚；收盘后可再跑一次切今日文件</td></tr>
-<tr><td><b>B · 全切（含今日）</b></td><td>A + 今日 29 个热文件（+ 可选 .bak）</td><td>3290 / ~79MB</td><td><b>必须等收盘 15:05 后</b></td><td>需停服务 → 切 → 重启重建；期间约 1–2 分钟空窗，L2 基线短暂 fail-open</td></tr>
+<tr><td><b>B · 全切（含今日）</b></td><td>A + 今日 29 个热文件（+ 可选 .bak）</td><td>3287 / 87.8MB</td><td><b>必须等收盘 15:05 后</b></td><td>需停服务 → 切 → 重启重建；期间约 1–2 分钟空窗，L2 基线短暂 fail-open</td></tr>
 <tr><td><b>C · 只切纯缓存</b></td><td>仅 K 线缓存 + tmp，不动 reports / bak / 截图 / 老候选池</td><td>2471 / 29.1MB</td><td>现在</td><td>最保守，但「一切缓存都切割」执行不彻底</td></tr>
 </table>
 <p class="kv">三个方案都走同一个工具、同一份 MANIFEST，随时可 <code>--rollback</code>。区别只在 flag 组合与执行时机。</p>
