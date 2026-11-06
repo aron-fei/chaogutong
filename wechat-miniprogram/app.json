@@ -1,0 +1,12 @@
+{
+  "pages": [
+    "pages/index/index"
+  ],
+  "window": {
+    "navigationBarTitleText": "A股工作台",
+    "navigationBarBackgroundColor": "#0b0e14",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#0b0e14"
+  },
+  "sitemapLocation": "sitemap.json"
+}

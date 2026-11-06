@@ -1,0 +1,4 @@
+/* 全局样式（web-view 内是 H5，这里只控制小程序外壳） */
+page {
+  background: #0b0e14;
+}

@@ -1,0 +1,11 @@
+{
+  "description": "market-monitor 微信小程序（web-view 嵌入 H5 工作台，最快上线形态）",
+  "miniprogramRoot": "./",
+  "appid": "touristappid",
+  "projectname": "market-monitor-miniprogram",
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "minified": false
+  }
+}
