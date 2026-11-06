@@ -31,6 +31,9 @@ __pycache__/
 *.py[cod]
 *.log
 
+# ---- 数据 cutover 归档快照（可逆，不入库）----
+.archive/
+
 # ---- 验证产物 / 截图 / 打包输出 ----
 .verify_shots/
 .playwright-cli/

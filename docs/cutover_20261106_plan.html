@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>数据 Cutover 方案与影响范围 · 2026-11-06</title>
+<style>
+:root{--bg:#f7f8fa;--card:#fff;--line:#e3e6ec;--txt:#1b1f26;--mut:#5f6672;--red:#c62f2f;--green:#12894a;--blue:#1a5fb4;--amber:#a86400}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font:14px/1.7 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+.wrap{max-width:1280px;margin:0 auto;padding:28px 32px 64px}
+h1{font-size:24px;font-weight:600;margin:0 0 6px}
+h2{font-size:18px;font-weight:600;margin:32px 0 12px;padding-left:10px;border-left:4px solid var(--blue)}
+h3{font-size:15px;font-weight:600;margin:20px 0 8px}
+p{margin:8px 0}
+.meta{color:var(--mut);font-size:13px;margin-bottom:20px}
+.warn{background:#fdecec;border:2px solid #e8a5a5;border-radius:10px;padding:16px 20px;margin:16px 0;color:#8b1a1a}
+.warn b{font-size:16px}
+.lead{background:#fff;border:1px solid var(--line);border-radius:10px;padding:18px 22px;margin:16px 0}
+.lead ol{margin:6px 0 0;padding-left:22px}.lead li{margin:7px 0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 20px;margin:12px 0}
+table{width:100%;border-collapse:collapse;background:#fff;font-size:13px;margin:10px 0 16px}
+th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+th{background:#f0f3f8;font-weight:600;white-space:nowrap}
+tr:nth-child(even) td{background:#fbfcfe}
+code{background:#f1f3f6;padding:1px 5px;border-radius:3px;font-size:12.5px}
+pre{background:#f6f8fb;border:1px solid var(--line);border-radius:8px;padding:12px 16px;overflow-x:auto;font-size:12.5px;line-height:1.6}
+.tag{display:inline-block;padding:1px 7px;border-radius:4px;font-size:12px;border:1px solid}
+.t-ok{color:#0b6b3a;background:#e8f6ee;border-color:#b9e2ca}
+.t-no{color:#a11c1c;background:#fdeaea;border-color:#f2bdbd}
+.t-warn{color:#8a5200;background:#fdf2dd;border-color:#efd49a}
+.t-rec{color:#1a5fb4;background:#eaf2fd;border-color:#bcd3f2}
+ul{margin:6px 0;padding-left:22px}li{margin:4px 0}
+.kv{font-size:13px;color:var(--mut)}.kv b{color:var(--txt)}
+.foot{margin-top:34px;padding-top:14px;border-top:1px solid var(--line);color:var(--mut);font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>数据 Cutover 方案与影响范围</h1>
+<div class="meta">生成 2026-11-06 09:45 CST · 切割线 <b>2026-11-06 00:00</b> · 当前状态：<b>DRY_RUN，磁盘未改动</b></div>
+
+<div class="warn">
+<b>⚠️ 此操作非常危险，可能导致不可逆的数据丢失！</b>
+<p style="margin:8px 0 0">本方案涉及 <b>最多 3382 个文件 / 约 94MB</b> 的位置变更。虽然采用「归档移动 + MANIFEST + 一键回滚」而非删除，
+但归档后若源文件被覆盖、归档目录被误删，或新策略重建失败，都可能造成历史数据丢失与盘中策略异常。
+<b>执行前请确认下方「切割范围」与「红线清单」；确认前不会动任何文件。</b></p>
+</div>
+
+<div class="lead">
+<b>结论先行</b>
+<ol>
+<li>已按你的指令完成<b>只读盘点 + DRY_RUN</b>，并写好可逆切割工具 <code>scripts/cutover_data.py</code>：默认 DRY_RUN，<code>--apply</code> 才移动，<code>--rollback</code> 一键还原，<b>全程不 unlink、不删除</b>。</li>
+<li>切割线定为 <b>2026-11-06 00:00</b>：之前的老数据、老候选池、全部缓存切走；今日及之后由新的三层漏斗逻辑重新生成。这正好实现「按新的建议来做」——新序列从今天干净起步。</li>
+<li><b>默认范围命中 3350 个老文件 / 60.4MB</b>，今日 32 个盘中热文件保留，266 个红线文件跳过，红线泄漏复检 <b>0</b>。</li>
+<li>现在是<b>盘中 09:45</b>，今日热文件里有 L0 题材索引、L2 昨日涨停基线、期货 K 线，切了会打断正在跑的策略 —— 这是<b>唯一需要你拍板的岔路口</b>。</li>
+<li>完整逐文件清单已导出 <code>docs/cutover_20261106_dryrun.csv</code>（3382 行，含路径/分类/大小/时间），可逐条核对。</li>
+</ol>
+</div>
+
+<h2>一、盘点结果（只读）</h2>
+<table>
+<tr><th>分类</th><th>老文件数</th><th>老文件大小</th><th>今日热文件</th><th>默认是否切</th><th>说明</th></tr>
+<tr><td>K 线缓存 <code>data/bottom_kline_cache/</code> · <code>watchlist_cache/</code></td><td>2465</td><td>29.1 MB</td><td>3</td><td><span class="tag t-ok">是</span></td><td>纯机器重建，最老 09-01，是体积主力</td></tr>
+<tr><td>跨项目历史报告 <code>reports/</code></td><td>736</td><td>18.3 MB</td><td>~15</td><td><span class="tag t-warn">需 --include-reports</span></td><td>老 pro_report / .txt / .log，827 个老文件中剔除状态类后的部分</td></tr>
+<tr><td>验证截图 <code>.verify_shots/</code> 等</td><td>52</td><td>10.8 MB</td><td>4</td><td><span class="tag t-warn">需 --include-shots</span></td><td>历次验收截图，可重建</td></tr>
+<tr><td>备份 <code>*.bak*</code></td><td>91</td><td>2.1 MB</td><td>4</td><td><span class="tag t-no">默认不动</span></td><td>你的铁律「大改前备份」，需显式 --include-bak</td></tr>
+<tr><td>运行时数据 / 老候选池</td><td>6</td><td>73.8 KB</td><td>9</td><td><span class="tag t-ok">老文件切</span></td><td><code>bottom_surge_latest.json</code>（老候选池结果）、<code>a_codes.json</code>、期货映射等</td></tr>
+<tr><td>用户资产 / 状态（红线）</td><td>266</td><td>—</td><td>3</td><td><span class="tag t-no">永不切</span></td><td>见第三节</td></tr>
+</table>
+<p class="kv">默认 DRY_RUN（不带任何 flag）只切 K 线缓存 + 老运行时数据：<b>2471 个 / 29.1MB</b>；加三个 flag 后为 <b>3350 个 / 60.4MB</b>；再加 <code>--include-today</code> 为 <b>3382 个 / 约 94MB</b>。</p>
+
+<h2>二、红线清单（任何参数下都不切割）</h2>
+<table>
+<tr><th>路径 / 模式</th><th>原因</th></tr>
+<tr><td><code>data/access_key.json</code></td><td>访问密钥，切走后手机 / LAN 无法登录</td></tr>
+<tr><td><code>portfolio.json</code> · <code>data/suggestion_state.json</code></td><td>真实持仓、复盘建议台账（30 条已采纳/实施记录），人工资产不可丢</td></tr>
+<tr><td><code>data/watchlist.json</code></td><td>用户自选股，人工录入</td></tr>
+<tr><td><code>data/reviews/</code> · <code>suggestions/</code> · <code>review_modes/</code> · <code>gate_history/</code></td><td>复盘 / 建议 / 闸门历史状态</td></tr>
+<tr><td><code>data/theme_library.json</code></td><td>含人工整理题材条目，保守按红线处理（非纯缓存）</td></tr>
+<tr><td><code>reports/slot_status.json</code> · <code>order_plan_*.json</code> · <code>trade_gate*.json</code> · <code>pending_*_confirm_*.json</code> · <code>operation_pool.json</code> · <code>gate_effectiveness.json</code></td><td>launchd 四时段调度、派单弹窗、复盘闸门依赖</td></tr>
+<tr><td><code>reports/backtest_database.json</code></td><td>50 万模拟盘账本（持仓 / 现金 / 盈亏）</td></tr>
+<tr><td><code>.git/</code> · <code>.workbuddy/</code> · <code>tests/</code> · <code>scripts/</code> · <code>docs/</code> · <code>templates/</code> · <code>static/</code></td><td>代码、版本库、项目数据，非数据缓存</td></tr>
+</table>
+<p class="kv">复检方式：<code>--json</code> 导出全量清单后按敏感名扫描，<b>红线泄漏 0</b>。已修掉一处初版漏网：<code>reports/trade_gate_applied.json</code> 现由统一红线判定拦截。</p>
+
+<h2>三、盘中风险（现在 09:45，连续竞价中）</h2>
+<div class="card">
+<ul>
+<li><b>今日热文件默认保留（32 个）</b>：<code>theme_cons_cache.json</code>（146 题材 / 4621 成分股，L0+L1 依赖）、<code>prev_zt.json</code>（昨日涨停 84 只，L2 用它排除连板接力）、<code>news_catalyst_cache.json</code>（快讯）、<code>fut_kline_cache.json</code>（20.4MB）、<code>gene_board.json</code>、今日验收截图。</li>
+<li>若强行切 <code>prev_zt.json</code>：L2 会短暂 fail-open，<b>可能误推连板接力票</b>，与你「只打首板」的原则冲突。</li>
+<li>若强行切 <code>theme_cons_cache.json</code>：题材索引需重新并发拉东财概念成分股，L0/L1 会有分钟级空窗。</li>
+<li>切 <code>reports/</code> 周边老报告会削弱历史复盘 / 回溯能力，但<b>不影响当日调度</b>（状态类已列红线）。</li>
+<li>切 <code>*.bak*</code> 会失去本轮 ADR-0047 改造的本地回滚点，故默认不动。</li>
+</ul>
+</div>
+
+<h2>四、三个方案（请拍板一个）</h2>
+<table>
+<tr><th>方案</th><th>范围</th><th>文件 / 体积</th><th>时机</th><th>影响</th></tr>
+<tr><td><b>A · 按日期归档切割</b> <span class="tag t-rec">推荐</span></td><td>老数据全切（含 reports / 截图 / bak）；今日热数据保留</td><td>3350 / 60.4MB</td><td><b>现在就能安全执行</b></td><td>盘中零中断；归档可回滚；收盘后可再跑一次切今日文件</td></tr>
+<tr><td><b>B · 全切（含今日）</b></td><td>A + 今日 32 个热文件</td><td>3382 / ~94MB</td><td><b>必须等收盘 15:05 后</b></td><td>需停服务 → 切 → 重启重建；期间约 1–2 分钟空窗，L2 基线短暂 fail-open</td></tr>
+<tr><td><b>C · 只切纯缓存</b></td><td>仅 K 线缓存 + tmp，不动 reports / bak / 截图 / 老候选池</td><td>2471 / 29.1MB</td><td>现在</td><td>最保守，但「一切缓存都切割」执行不彻底</td></tr>
+</table>
+<p class="kv">三个方案都走同一个工具、同一份 MANIFEST，随时可 <code>--rollback</code>。区别只在 flag 组合与执行时机。</p>
+
+<h2>五、执行与回滚命令</h2>
+<pre># 方案 A（推荐）
+/opt/homebrew/anaconda3/bin/python3 scripts/cutover_data.py \
+  --include-reports --include-bak --include-shots --apply
+
+# 方案 B（收盘后，先停服务）
+lsof -ti :8765 | head -1 | xargs kill -9
+/opt/homebrew/anaconda3/bin/python3 scripts/cutover_data.py \
+  --include-reports --include-bak --include-shots --include-today --apply
+# launchd 会自动拉起服务并重建缓存
+
+# 方案 C
+/opt/homebrew/anaconda3/bin/python3 scripts/cutover_data.py --apply
+
+# 任意时刻一键还原
+/opt/homebrew/anaconda3/bin/python3 scripts/cutover_data.py --rollback</pre>
+<p class="kv">归档位置 <code>.archive/cutover_20261106/</code>（保留完整相对路径，已加入 .gitignore），MANIFEST 记录每个文件的 sha256 / 原路径 / 大小 / mtime；每批 200 个逐批校验，任一失败立即停止。</p>
+
+<h2>六、「按新的建议来做」的联动</h2>
+<div class="card">
+<p>切割的目的不是腾空间，是让<b>新策略的历史序列从今天干净起步</b>，不被老口径污染。确认切割后建议同步落地上一份调研报告里的 P1 项：</p>
+<ul>
+<li><b>题材强度历史落盘</b>：新建 <code>data/theme_strength_history.jsonl</code>，每 30 分钟追加一行 <code>{asof, schema_version:2, trends[...] }</code>，只记录 cutover 之后的数据 → 支撑「连续 3 日区间强度 / 区间净额」，过滤一日游题材。</li>
+<li><b>涨停天梯 / 晋级率</b>：复用涨停池 + 昨日涨停基线（84 只）算一板/二板/三板家数与晋级率，不需要历史积累，纯现算。</li>
+<li><b>老候选池降位</b>：M8「底部放量」是老口径，L1 低位挖掘（趋势题材内、未涨停、量能刚抬头）接替主推荐位；老结果不再参与新评分。</li>
+</ul>
+<p class="kv">这三项属于策略改动，<b>在你确认切割方案前不做</b>；确认后与切割同批交付并跑全量回归。</p>
+</div>
+
+<h2>七、执行后验证清单</h2>
+<div class="card">
+<ul>
+<li><code>cutover_data.py</code> 退出码 0、MANIFEST <code>partial=false</code>、<code>count</code> 与 DRY_RUN 一致。</li>
+<li>红线文件逐一 <code>test -f</code> 存在：密钥 / 持仓 / 自选 / 建议台账 / 模拟盘账本 / 今日派单状态。</li>
+<li><code>git status</code> 干净（<code>.archive/</code> 已忽略）、<code>/api/health</code> 200、<code>/api/theme_pick</code> 与 <code>/api/sprite</code> 正常。</li>
+<li>全量 <code>unittest</code> 26 项 OK + Playwright 工作台控制台 0 error。</li>
+<li>写 ADR / 项目档案 / 当日记忆，记录切割线、归档位置、回滚方式。</li>
+</ul>
+</div>
+
+<div class="foot">market-monitor · 数据 cutover DRY_RUN 方案 · 本报告为只读盘点产物，磁盘未发生任何改动 · 不构成投资建议</div>
+
+</div>
+</body>
+</html>
