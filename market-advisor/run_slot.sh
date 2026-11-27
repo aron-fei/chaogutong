@@ -233,6 +233,16 @@ if [ "$STAGE" = "盘后复盘" ]; then
   else
     log "WARN 未找到 run_gate1535.sh，跳过盘后闸门生成"
   fi
+  # 【2026-11-27 新增】机械版复盘 md：不依赖 AI/WorkBuddy，纯文件拼装。
+  # AI 版 recap（agent 撰写）存在时本脚本自动让位（不加 --force 不覆盖）。
+  # 必须放在闸门钩子之后：复盘引用明日闸门 trade_gate.json。
+  if [ -f "$SCRIPT_DIR/build_mechanical_recap.py" ]; then
+    log "生成机械版复盘 recap_$(date '+%Y-%m-%d').md（无 AI 兜底）"
+    "$PY" -u "$SCRIPT_DIR/build_mechanical_recap.py" >> "$RUNNER_LOG" 2>&1
+    log "机械复盘 exit=$?（已存在则 SKIP）"
+  else
+    log "WARN 未找到 build_mechanical_recap.py，跳过机械复盘"
+  fi
 fi
 
 exit $RC
