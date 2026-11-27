@@ -29,6 +29,10 @@ import theme_board  # M10 细分题材引擎（东财概念成分股反向索引
 import theme_picker  # 2026-11-05 v2：L0 题材趋势 + L1 低位挖掘（纯内存打分）
 import news_catalyst  # 2026-11-05 v2：新闻/传闻催化（东财快讯真实源）
 import dispatch_diag  # 2026-11-05 体检剩余项：零派单根因诊断（只读）
+import strategy_router  # 2026-11-17 ADR-0051：多策略路由（大盘状态→打板/趋势/反转/防守）
+import firstboard_setup  # 2026-11-23 ADR-0053：首板蓄势形态评分（涨停前趋势/资金/放量+封板质量）
+import genzhuang_scan  # 2026-11-23 ADR-0054：跟庄建仓公式全市场扫描（低位刚拐头）
+import resonance  # 2026-11-23 ADR-0055：交叉共振验证（双信号+回测+台账）
 import bottom_radar  # M8 底部放量雷达（ADR-0033，缓存+后台刷新，扫描整轮 5~6s）
 import position_watch  # M9 持仓实时跟踪（ADR-0034，交易时段逐帧评估持仓 → 分层操作建议+异动）
 import zt_board_stat  # 2026-11-06 开盘啦借鉴：板块强度榜 / 涨停晋级率 / 亏钱效应（纯现算）
@@ -39,6 +43,7 @@ import math
 import secrets
 import threading
 import time
+import traceback
 
 app = Flask(__name__)
 # 防止浏览器/代理缓存模板（开发期频繁改动，老缓存会导致用户看不到新版）
@@ -770,6 +775,364 @@ def api_sprite():
 def api_dispatch_diag():
     """体检剩余项：把「报告 ready 但零派单」从黑盒变成逐时段可自查的结论。只读。"""
     payload, code = _cached("dispatch_diag", 60, dispatch_diag.diagnose)
+    return jsonify(payload), code
+
+
+@app.route("/api/strategy_router")
+def api_strategy_router():
+    """ADR-0051 策略罗盘：当前大盘状态→该用哪种策略（纯展示，只读）。
+    温度取最新 order_plan（派单引擎权威口径），情绪/涨跌停取实时快照。
+    """
+    def produce():
+        temp = None
+        try:
+            import glob as _glob
+            plans = sorted(_glob.glob(str(config.REPORTS_DIR / "order_plan_*.json")))
+            if plans:
+                with open(plans[-1], encoding="utf-8") as _f:
+                    _d = json.load(_f)
+                temp = _d.get("market_temp")
+        except Exception as _e:
+            print("[strategy_router] 读温度失败: %s" % _e)
+        snap = md.snapshot() or {}
+        stage = ""
+        try:
+            _cy = mood_engine.cycle_judge(snap)
+            stage = (_cy or {}).get("stage", "")
+        except Exception as _e:
+            print("[strategy_router] 情绪阶段失败: %s" % _e)
+        route = strategy_router.judge_mode(
+            temp=temp, stage=stage,
+            broken_ratio=snap.get("broken_ratio"),
+            limit_down=snap.get("limit_down"),
+            up=snap.get("up_count", snap.get("rise_count")),
+            down=snap.get("down_count", snap.get("fall_count")),
+        )
+        # 今日派单/确认单状态（2026-11-17）：让「为什么没弹确认框」在第一屏可见。
+        # 弹窗只认 pending_buy_confirm_*.json，而它由 buy_candidates 落地；两者都可能为 0。
+        dispatch = {"buys": 0, "stages": [], "pending": 0, "verdict": "", "reason": ""}
+        try:
+            import glob as _g2
+            today_tag = datetime.now().strftime("%Y%m%d")
+            _notes = []
+            for pf in sorted(_g2.glob(str(config.REPORTS_DIR / "order_plan_*.json"))):
+                pd = json.load(open(pf, encoding="utf-8"))
+                nb = len(pd.get("buy_candidates") or [])
+                dispatch["buys"] += nb
+                for _a in (pd.get("actions") or []):
+                    if isinstance(_a, dict) and _a.get("note"):
+                        _notes.append(str(_a["note"]))
+                dispatch["stages"].append({"stage": Path(pf).stem.replace("order_plan_", ""),
+                                           "buys": nb, "temp": pd.get("market_temp")})
+            pending = _g2.glob(str(config.REPORTS_DIR / ("pending_buy_confirm_*_%s.json" % today_tag)))
+            pending = [p for p in pending if not p.endswith(".confirmed.json")]
+            dispatch["pending"] = len(pending)
+            _joined = " ".join(_notes)
+            _ice = ("冰点" in _joined) or ("系统性风险" in _joined) or ("不支持开新仓" in _joined)
+            if route.get("gate_open") is False or _ice:
+                dispatch["verdict"] = "空仓（冰点/系统性风险）"
+                dispatch["reason"] = "今日大盘处冰点或触发系统性风险闸门，按纪律不买，" \
+                                     "故无买入候选、无确认单、无弹窗 —— 这是保护，不是故障。"
+            elif dispatch["buys"] == 0:
+                dispatch["verdict"] = "今日零派单"
+                dispatch["reason"] = "各时段均无达标买入候选（弱市或共识不足），" \
+                                     "因此没有确认单可弹。宁可错过，不可乱做。"
+            else:
+                dispatch["verdict"] = "已派单 %d 只" % dispatch["buys"]
+                dispatch["reason"] = "今日有买入候选，确认单应出现在右下角「待确认」入口；" \
+                                     "若被关掉可点该入口重新打开。"
+        except Exception as _e:
+            print("[strategy_router] 派单状态取数失败: %s" % _e)
+        result = {**route, "sources": sorted(route["sources"]),
+                  "temp": temp, "stage": stage, "dispatch": dispatch,
+                  "seven_factors": [{"name": n, "desc": d} for n, d in strategy_router.SEVEN_FACTORS]}
+        return {"ok": True, **result}
+    payload, code = _cached("strategy_router", 60, produce)
+    return jsonify(payload), code
+
+
+@app.route("/api/firstboard_setup")
+def api_firstboard_setup():
+    """ADR-0053 首板蓄势雷达：今日首板按「涨停前形态 + 今日封板质量」评分排序。
+
+    只读；形态取腾讯日K（剔除涨停当日），资金用 CMF/OBV 量价推导（不用失效的第三方资金流接口）。
+    首次调用需逐只拉 40 根日K（25 只约数秒），用 _cached 缓存 5 分钟。
+    """
+    def produce():
+        import re as _re
+        snap = md.snapshot() or {}
+        # 【2026-11-26 修 P0-口径】zt_pool 是展示截断版（[:60]），zt_pool_all 才是全量。
+        # 用截断版会把晚封的首板（11-26 实测漏掉 5 只首板）整只漏出首板雷达。
+        zt = snap.get("zt_pool_all") or snap.get("zt_pool") or []
+        first = []
+        for x in zt:
+            st = str(x.get("stat", ""))
+            lb = x.get("lianban") or 1
+            m = _re.match(r"^(\d+)\s*/\s*(\d+)$", st)
+            boards = int(m.group(2)) if m else lb
+            if boards <= 1:                       # 只看首板，排除连板/接力
+                first.append(x)
+        import bottom_surge as _bs
+        ranked = firstboard_setup.rank(first, lambda c: _bs.daily_k(c, n=40))
+        strong = [r for r in ranked if r.get("verdict") == "强候选"]
+        pick = strong[0] if strong else (ranked[0] if ranked else None)
+        return {
+            "ok": True,
+            "asof": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "zt_count": len(zt), "first_count": len(first),
+            "pick": pick, "ranked": ranked[:12],
+            "weights": {"trend": firstboard_setup.W_TREND, "flow": firstboard_setup.W_FLOW,
+                        "volume": firstboard_setup.W_VOL, "setup": firstboard_setup.W_SETUP,
+                        "seal": firstboard_setup.W_SEAL},
+            "method": ("涨停前K线(剔除今日) 趋势35%+资金35%+量能30% = 形态分；"
+                       "形态65%+今日封板质量35% = 综合分。资金用 CMF20/OBV/红肥绿瘦真实量价推导，"
+                       "不依赖已失效的第三方资金流接口。"),
+        }
+    payload, code = _cached("firstboard_setup", 300, produce)
+    return jsonify(payload), code
+
+
+@app.route("/api/resonance")
+def api_resonance():
+    """ADR-0055 交叉共振验证：今日双信号交集 + 历史回测统计 + 信号台账。
+
+    ?view=today 仅今日交叉（快）；?view=backtest 含回测（首次约70s，之后缓存秒回）；
+    ?view=ledger 台账；?refresh=1 强制重算回测。
+    """
+    view = request.args.get("view", "today")
+    try:
+        if view == "backtest":
+            refresh = request.args.get("refresh") == "1"
+            d = resonance.backtest(lookback=int(request.args.get("days", 240)), refresh=refresh)
+            return jsonify(d)
+        if view == "ledger":
+            return jsonify({"ok": True, "ledger": resonance.load_ledger()[-50:],
+                            "verify": resonance.verify_ledger()})
+        if view == "record":
+            # 记录今日交叉信号到台账
+            t = resonance.today_cross()
+            sigs = t.get("cross") or t.get("near") or []
+            added = resonance.append_ledger(sigs, source="today_cross")
+            return jsonify({"ok": True, "added": added, "today": t})
+        t = resonance.today_cross()
+        # 顺带附上回测统计（走缓存，秒回）
+        try:
+            bt = resonance.backtest(lookback=240)
+            t["backtest_stats"] = bt.get("stats")
+            t["backtest_signals"] = bt.get("signals", [])[:8]
+            t["backtest_count"] = bt.get("signal_count")
+            t["backtest_asof"] = bt.get("asof")
+        except Exception as e:
+            t["backtest_error"] = f"{type(e).__name__}: {e}"
+        return jsonify(t)
+    except Exception as e:
+        print(f"[resonance] API失败: {type(e).__name__}: {e}")
+        import traceback as _tb
+        _tb.print_exc()
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
+@app.route("/api/genzhuang_scan")
+def api_genzhuang_scan():
+    """ADR-0054 跟庄建仓公式全市场扫描（只读）。
+
+    公式原文来自用户提供的通达信截图。全A帧粗筛 → 并发日K → 逐只跑 XG 公式。
+    首次约 8s（5224只粗筛到300只拉日K），缓存 5 分钟；force=1 强制重扫。
+    """
+    try:
+        d = genzhuang_scan.scan()
+        return jsonify(d)
+    except Exception as e:
+        print(f"[genzhuang_scan] 扫描失败: {type(e).__name__}: {e}")
+        import traceback as _tb
+        _tb.print_exc()
+        return jsonify({"ok": False, "error": f"{type(e).__name__}: {e}"}), 500
+
+
+# ---- 2026-11-19 行业成分股 THS 兜底源 ----
+# 背景：东财 push2.eastmoney.com clist 接口本机被远端断连（RemoteDisconnected，机器级封锁），
+# EM 行业/概念成分股均不可用。THS（q.10jqka.com.cn）与板块涨幅 tab 同源且可用，
+# 故行业下钻在 EM 失败/无匹配时改走 THS 行业详情页（成分股表格，20 只/页，翻页拉全量）。
+_THS_V_COOKIE = {"v": None, "ts": 0.0}
+_THS_HY_NAME_MAP = {"map": None, "ts": 0.0}
+
+
+def _ths_v_cookie():
+    """生成并缓存同花顺 v cookie（ths.js 经 py_mini_racer 计算，缓存 4h）。"""
+    import time as _t
+    now = _t.time()
+    if _THS_V_COOKIE["v"] and now - _THS_V_COOKIE["ts"] < 4 * 3600:
+        return _THS_V_COOKIE["v"]
+    import py_mini_racer
+    from akshare.datasets import get_ths_js
+    js = open(get_ths_js("ths.js"), encoding="utf-8").read()
+    ctx = py_mini_racer.MiniRacer()
+    ctx.eval(js)
+    _THS_V_COOKIE["v"] = ctx.call("v")
+    _THS_V_COOKIE["ts"] = now
+    return _THS_V_COOKIE["v"]
+
+
+def _ths_industry_name_map():
+    """同花顺行业名 -> 行业代码映射（缓存 6h）。"""
+    import time as _t
+    now = _t.time()
+    if _THS_HY_NAME_MAP["map"] and now - _THS_HY_NAME_MAP["ts"] < 6 * 3600:
+        return _THS_HY_NAME_MAP["map"]
+    import akshare as _ak
+    _df = _ak.stock_board_industry_name_ths()
+    m = {str(r["name"]).strip(): str(r["code"]) for _, r in _df.iterrows()}
+    _THS_HY_NAME_MAP["map"] = m
+    _THS_HY_NAME_MAP["ts"] = now
+    return m
+
+
+def _ths_industry_cons(name):
+    """THS 行业成分股全量代码（q.10jqka.com.cn 行业详情页翻页）。失败抛异常。
+
+    页 1 = detail/code/{code}/，页 n>=2 = detail/code/{code}/order/desc/page/{n}/ajax/1/，
+    总页数取 changePage 分页器最大 page 值；成分股代码取 stockpage 链接去重。
+    """
+    import re as _re2
+    import requests as _rq
+    m = _ths_industry_name_map()
+    code = m.get(name)
+    if not code:
+        _norm = lambda s: _re2.sub(r"[ⅠⅡⅢⅣⅤ]", "", str(s)).strip()
+        key = _norm(name)
+        code = next((c for n, c in m.items() if _norm(n) == key), None) \
+            or next((c for n, c in m.items() if key and (key in n or n in key)), None)
+    if not code:
+        raise LookupError(f"同花顺行业分类中无「{name}」")
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/89.0.4389.90 Safari/537.36",
+        "Cookie": f"v={_ths_v_cookie()}",
+    }
+    base = f"https://q.10jqka.com.cn/thshy/detail/code/{code}/"
+    seen = set()
+    max_page = 1
+    for page in range(1, 26):  # 每页 20 只，安全上限 25 页(500 只)
+        url = base if page == 1 else f"{base}order/desc/page/{page}/ajax/1/"
+        r = _rq.get(url, headers=headers, timeout=8)
+        if r.status_code != 200:
+            break
+        html = r.text
+        new = [c for c in _re2.findall(r"stockpage\.10jqka\.com\.cn/(\d{6})/", html) if c not in seen]
+        if not new and page > 1:
+            break
+        seen.update(new)
+        pages = [int(x) for x in _re2.findall(r'class="changePage" page="(\d+)"', html)]
+        if pages:
+            max_page = max(max_page, max(pages))
+        if page >= max_page:
+            break
+    if not seen:
+        raise RuntimeError(f"THS 行业「{name}」成分股为空")
+    return sorted(seen)
+
+
+@app.route("/api/theme_constituents")
+def api_theme_constituents():
+    """题材/板块下钻（2026-11-17）：点题材名→列出该题材全部成分股，按涨幅从高到低。
+
+    数据源：题材用 theme_board.codes_for(name)（东财概念反向索引），
+    行业用东财行业成分股（2026-11-19 起失败时兜底走同花顺行业详情页）；
+    涨幅/现价/量比/成交额取全A实时帧 md.get_full_rows()。
+    纯只读，TTL 30s 缓存（name 维度），缺口不臆造。
+    """
+    name = (request.args.get("name") or "").strip()
+    dim = (request.args.get("dim") or "theme").strip()
+    if not name:
+        return jsonify({"ok": False, "error": "缺少 name 参数"}), 400
+
+    def produce():
+        codes = []
+        src = "theme_board"
+        if dim == "industry":
+            # 【2026-11-17 修】板块涨幅 tab 用的是同花顺行业名（ak.stock_board_industry_summary_ths），
+            # 但 akshare 无「同花顺行业成分股」接口，只能用东财行业成分。两套分类名不完全一致：
+            #   · 86/90 可精确或去罗马数字后缀匹配（电子化学品→电子化学品Ⅲ、小家电→小家电）
+            #   · 4 个需显式别名（军工装备→国防军工、饮料制造→软饮料…）
+            # 原实现还有 pandas 陷阱：`(_df.get("代码") or [])` 对 Series 求 bool 抛 ValueError。
+            import re as _re
+            _THS_EM_ALIAS = {
+                "军工装备": "国防军工", "饮料制造": "软饮料",
+                "油气开采及服务": "油气开采Ⅱ", "石油加工贸易": "石油石化",
+            }
+            try:
+                import akshare as ak
+                _em_name = _THS_EM_ALIAS.get(name, name)
+                # 精确名取不到时，去罗马数字后缀（Ⅱ/Ⅲ）再找一次
+                _df = None
+                try:
+                    _df = ak.stock_board_industry_cons_em(symbol=_em_name)
+                except Exception:
+                    _df = None
+                if _df is None or _df.empty:
+                    _norm = lambda s: _re.sub(r"[ⅠⅡⅢⅣⅤ]", "", str(s)).strip()
+                    try:
+                        _names = [str(x) for x in ak.stock_board_industry_name_em()["板块名称"].tolist()]
+                    except Exception:
+                        _names = []
+                    _key = _norm(_em_name)
+                    _cand = next((x for x in _names if _norm(x) == _key), None) \
+                        or next((x for x in _names if _key and (_key in x or x in _key)), None)
+                    if _cand:
+                        try:
+                            _df = ak.stock_board_industry_cons_em(symbol=_cand)
+                        except Exception:
+                            _df = None
+                if _df is not None and not _df.empty:
+                    # 关键：不能用 `or []`（pandas Series 求 bool 抛 ValueError）
+                    _col = _df.get("代码")
+                    codes = [str(x).zfill(6) for x in (_col.tolist() if _col is not None else [])]
+                    src = "eastmoney_industry"
+            except Exception as _e:
+                # EM 不可用（2026-11-19 push2 全线断连）→ 走 THS 兜底
+                log_util.quiet_warn("app.py:990 industry_em", _e)
+            if not codes:
+                # 【2026-11-19 兜底】东财 push2 clist 接口本机被远端断连，
+                # 改走同花顺行业详情页（与板块涨幅 tab 同源，q.10jqka.com.cn 可用）
+                try:
+                    codes = _ths_industry_cons(name)
+                    src = "ths_industry"
+                except Exception as _e2:
+                    return {"ok": False, "error": f"行业成分股取数失败（EM 断连 + THS 兜底失败）: {type(_e2).__name__}: {_e2}",
+                            "name": name, "dim": dim}
+        else:
+            try:
+                codes = tboard.codes_for(name)
+            except Exception as _e:
+                return {"ok": False, "error": f"题材索引取数失败: {type(_e).__name__}: {_e}",
+                        "name": name, "dim": dim}
+        rows, rows_at = md.get_full_rows()
+        by_code = {}
+        for r in rows or []:
+            c = str(r.get("code") or "").zfill(6)
+            if c:
+                by_code[c] = r
+        out = []
+        for c in codes:
+            c = str(c).split(".")[0].zfill(6)
+            rec = by_code.get(c)
+            if not rec:
+                continue  # 停下牌/退市/无行情的不列，不臆造
+            out.append({
+                "code": c,
+                "name": rec.get("name") or "",
+                "pct": rec.get("pct"),
+                "price": rec.get("price"),
+                "amount_yi": rec.get("amount_yi"),
+                "vol_ratio": rec.get("vol_ratio"),
+                "turnover": rec.get("turnover"),
+            })
+        out.sort(key=lambda x: (x.get("pct") if x.get("pct") is not None else -1e9), reverse=True)
+        return {"ok": True, "name": name, "dim": dim, "source": src,
+                "theme_count": len(codes), "quoted": len(out),
+                "rows_at": str(rows_at or ""), "members": out}
+
+    payload, code = _cached("theme_cons:%s:%s" % (dim, name), 30, produce)
     return jsonify(payload), code
 
 
@@ -1512,7 +1875,18 @@ def api_confirm_sell():
 # ---- 持仓（手动录入，只读行情估值，不碰券商账号） ----
 @app.route("/api/portfolio", methods=["GET"])
 def api_portfolio_get():
-    return jsonify(portfolio.valuation())
+    d = portfolio.valuation()
+    # ADR-0052：真实持仓附「只读操作建议参考层」——不改 d.summary/positions 任何估值口径，
+    # 也不写确认单/回测库/派单；前端以独立列展示，明确标注"不自动执行"。
+    try:
+        d["advice"] = portfolio.advise(d.get("positions") or [], lite=(request.args.get("lite") == "1"))
+        d["advice_scope"] = "真实持仓参考建议 · 不进模拟盘账户 · 不自动执行"
+    except Exception as e:
+        d["advice"] = {}
+        d["advice_error"] = f"{type(e).__name__}: {e}"
+        print(f"[api/portfolio] advice 降级: {d['advice_error']}")
+        traceback.print_exc()
+    return jsonify(d)
 
 
 @app.route("/api/portfolio", methods=["POST"])

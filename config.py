@@ -199,6 +199,10 @@ SPRITE_ROCKET_MIN_AMOUNT = 0.3    # 火箭发射最低成交额（亿，过滤�
 SPRITE_ROCKET_MAX_PCT = 9.7       # 已接近涨停不再报「发射」（另有封板事件）
 SPRITE_DIVE_PCT = -1.2            # 💧 高台跳水：60s 跌幅 ≤ 该值(%)
 SPRITE_SPEED_TOP = 12             # ⚡ 个股涨速榜条数
+# 【2026-11-17 修】涨停池是「看全市场封板情况」的清单，不是「涨速前 N」——
+# 过去错用 SPRITE_SPEED_TOP=12 截断，按连板数+首封时间排序后，像好当家这种
+# 首封 09:45 的一板票被挤掉（用户实测反馈）。改为独立上限，卡片 .sp-list 自带滚动。
+SPRITE_ZT_TOP = 80                # 🏆 涨停池卡片最多显示只数（常态 30~60，留足余量）
 # 板块涨速（数据源：腾讯 proxy.finance.qq.com 板块榜，自带官方 speed 涨速字段）
 # 实测 2026-09-14：hy=31 个一级行业，gn 可翻页取前 N 概念；turnover/zljlr 单位=万元
 BOARD_RANK_INTERVAL = 12          # 板块榜刷新间隔（秒）

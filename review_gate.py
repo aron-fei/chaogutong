@@ -40,6 +40,7 @@ import log_util
 import os
 import shutil
 import sys
+import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
@@ -52,7 +53,15 @@ HISTORY_DIR = BASE / "data" / "gate_history"
 
 GATE_VERSION = 2   # v2（ADR-0041）：focus[] 增补 board_days/pct —— 供调度器把「复盘重点」当供票源用
 COOLING_DAYS = 5          # 追高/超配违规 → 冷却 N 个交易日
-ESCAPE_TEMP = 60          # 逃生阀：次日实时温度 ≥ 此值 → 硬阻断降级为警告
+ESCAPE_TEMP = 60          # 逃生阀：次日实时温度 ≥ 此值 → 硬阻断降级为试探档
+# 【2026-11-26 修 P0-逃生阀】逃生阀降级后的「试探档」硬上限（= 「冰点」档的试探约束）。
+# 退潮段 _POLICY = (cap 10, single 0, picks 0, max_board 2, hard True)：
+# 「空仓」语义由 picks=0 / single=0 承载；旧实现降级 hard 时让这两个 0 被 falsy 判空跳过
+# → 上限整体失效 → 退潮段变成无限制（11-26 09:25 实测派出买单，击穿空仓防守）。
+# 降级时 0 → 显式试探档（1 只 / 单票 8%），段总仓上限 cap 不变。
+# ★ 与 market_scheduler.py 的 REVIEW_GATE_ESCAPE_MAX_PICKS / _SINGLE_PCT 必须一致。
+ESCAPE_MAX_PICKS  = 1     # 逃生阀降级后最多派 1 只
+ESCAPE_SINGLE_PCT = 8     # 逃生阀降级后单票上限 8%
 STALE_WARN_TRADE_DAYS = 2  # 闸门 asof 落后今日超过 N 个交易日 → 工作台红条告警
 
 # ============================================================================
@@ -255,12 +264,20 @@ def build_gate(review, mode=None, asof=None, write=True):
     pending_sell = _pending_sell_from_violations(violations)
 
     # ---- 风向标重点池（复盘选出的 8 只，次日命中即置顶）----
+    # 【2026-11-26 修 P0-口径】重点池必须与本段 max_board_days 对齐：
+    # 闸门自己不允许买超过 max_board 板的高位票，可重点池却把它标成「重点」→
+    # 调度器给它打上「复盘重点」标签占掉 Top-N 名额，随后又被风格闸门剔除 →
+    # 白占名额 + 污染闸门效能统计（dropped 组里混进自己推荐过的票）。
+    # 该偏差已在 11-05 / 11-19 / 11-20 / 11-26 四次实证。
+    # 超限项不丢弃：移到 focus_excluded 并写明原因（工作台可见，信息不丢）。
     focus = []
+    focus_excluded = []
     for w in wind[:8]:
         code = _norm_code(w.get("code") or w.get("symbol"))
         if not code:
             continue
-        focus.append({
+        bd = _to_int(w.get("lianban"), 1) or 1
+        item = {
             "name": w.get("name") or "",
             "symbol": w.get("symbol") or code,
             "code": code,
@@ -269,10 +286,16 @@ def build_gate(review, mode=None, asof=None, write=True):
             "one_word": bool(w.get("one_word")),
             # ADR-0041：v2 起带上连板数与涨幅 —— 调度器要把「非一字板且板数达标」的
             # 风向标反过来当【供票源】用（修复"复盘只能拦不能推"），必须知道板数。
-            "board_days": _to_int(w.get("lianban"), 1) or 1,
+            "board_days": bd,
             "pct": w.get("pct"),
             "why": (w.get("why") or "")[:100],
-        })
+        }
+        if bd > max_bd:
+            item["excluded_reason"] = ("%d 板 > 「%s」段允许的最高 %d 板（不接力高位连板）"
+                                       % (bd, stage, max_bd))
+            focus_excluded.append(item)
+            continue
+        focus.append(item)
 
     gate = {
         "version": GATE_VERSION,
@@ -297,6 +320,7 @@ def build_gate(review, mode=None, asof=None, write=True):
         "cooling": cooling,
         "pending_sell": pending_sell,
         "focus": focus,
+        "focus_excluded": focus_excluded,
         # —— 复盘原始信号（供避难阀与展示）——
         "stage_signals": {"zt": sig.get("zt"), "dt": sig.get("dt"),
                           "max_board": sig.get("max_board"), "ratio": sig.get("ratio"),
@@ -307,6 +331,18 @@ def build_gate(review, mode=None, asof=None, write=True):
     }
 
     if write:
+        # ---- 【2026-11-26 修 P0-口径】残缺信号不得写盘 ----
+        # zt=0 或 ratio=None 都意味着「判段依据不全」：ratio 缺失时 mood_engine 的
+        # 分歧规则因 `ratio is not None` 前置条件失配 → 阶段静默翻掉
+        # （11-26 实测：ratio=None → 分歧 变 反包，仓位上限 40%→30%）。
+        # 宁可不写（沿用既有闸门），也不能用错段约束明日。
+        if not sig.get("zt") or sig.get("ratio") is None:
+            print("[gate] 信号不完整（zt=%s ratio=%s）→ 拒绝写盘（沿用既有闸门）"
+                  % (sig.get("zt"), sig.get("ratio")))
+            return gate
+        # 【2026-11-26 修 P0-①】副本逻辑下沉进 build_gate（唯一写盘点）。
+        # 在把「明日闸门」写进主文件之前，先保住磁盘上的**今日闸门**。
+        _preserve_today_gate(asof_d)
         GH_ok = _write_json(GATE_FILE, gate)
         if GH_ok:
             try:
@@ -331,6 +367,49 @@ def _write_json(path, obj):
     except Exception as e:
         print("[gate] 写入失败 %s: %s" % (path, e))
         return False
+
+
+def _preserve_today_gate(asof_d):
+    """写盘前保住「今日生效闸门」到 trade_gate_current.json（P0-① 防护下沉点）。
+
+    【为什么必须在这里】此前保护只在 `auto_build` 的 step1.5 里，而
+    `review_deep.review_deep` → `build_gate(write=True)` 这条路径**没有**保护：
+    工作台「复盘模式」tab 自动调 /api/review_deep（用户零操作）→ 盘中 09:0x
+    竞价时段就会把**下一交易日**的失真闸门写进 trade_gate.json，
+    覆盖掉约束今日的那份 → 当天盘中闸门直接 fail-open。
+    （ADR-0040 必查坑 #1「写闸门必须先另存今日副本」，历史上已复发 4 次。）
+
+    规则：
+      · 本次要写的闸门 asof == 今日 → 不动（写的就是今日闸门本身）。
+      · 本次要写的闸门 asof != 今日 → 若磁盘上存在 asof == 今日的闸门
+        （主文件或 current 副本任一），先把它写进 trade_gate_current.json，
+        再让主文件承载新闸门。调度器 `load_review_gate` 优先读 current 副本。
+
+    任何异常都不得阻断主流程（闸门路径必须 fail-open）。
+    """
+    try:
+        today_d = date.today()
+        if asof_d == today_d:
+            return False
+        cur = REPORTS / "trade_gate_current.json"
+        for src in (cur, GATE_FILE):
+            try:
+                d = json.loads(src.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            if not isinstance(d, dict) or not d.get("asof"):
+                continue
+            if str(d.get("asof"))[:10] != today_d.isoformat():
+                continue
+            if src == cur:
+                return False        # current 已是今日闸门，无需重写
+            if _write_json(cur, d):
+                print("[gate] 已保留今日生效闸门（asof=%s）到 %s"
+                      % (today_d.isoformat(), cur.name))
+                return True
+    except Exception as e:
+        print("[gate] 保留今日闸门失败(不影响主流程): %s" % e)
+    return False
 
 
 # ---------------------------------------------------------------- 闸门读取
@@ -403,16 +482,40 @@ def apply(stage, candidates, gate=None, ctx=None):
         meta["shadow_would_drop"] = [d["name"] for d in _judge(cands, gate, ctx)[1]]
         return cands, [], meta
 
-    # ---- 逃生阀：复盘判防守，次日却明显转强 → 降级为警告 ----
+    # ---- 逃生阀：复盘判防守，次日却明显转强 → 降级为「试探档」 ----
+    # 【2026-11-26 修 P0-逃生阀】降级 ≠ 解除全部约束。
+    # 退潮段 _POLICY = (cap 10, single 0, picks 0, max_board 2, hard True)：
+    # 「空仓」语义由 picks=0 / single=0 承载（hard 只是最后一道保险）。
+    # 旧实现只把 hard 置 False 就走 else 分支，而下游两处判据遇 0 走 falsy：
+    #   · `if picks and len(kept) > picks` → picks=0 → 只数上限整体失效
+    #   · `if eq and single_pct`           → single=0 → 单票上限整体失效
+    # → 退潮段被降级成「无限制」，11-26 09:25 实测仍派出 1 只买单（2.48% 权益），
+    #    完全击穿「空仓防守」。同 10-21「炸板率恒 100%」的 `or` 陷阱，一并治。
+    #
+    # 降级规则（保守，与调度器侧一致）：
+    #   · 段自带 picks/single 为正数 → 保留（量化上限仍生效）
+    #   · 段自带 picks/single 为 0（空仓编码）→ 换显式试探档（1 只 / 单票 8%）
+    #   · 段总仓上限 cap 始终不变（退潮仍是 10%）
     hard = bool(gate.get("hard_block"))
     temp = _to_float(ctx.get("temperature"))
     if hard and temp is not None and temp >= ESCAPE_TEMP:
         hard = False
         note = ("逃生阀：今日实时情绪温度 %.1f ≥ %d，复盘判「%s」与实时结构背离 → "
-                "硬阻断降级为警告（仍受冷却/高度/仓位上限约束）"
-                % (temp, ESCAPE_TEMP, gate.get("stage")))
+                "硬阻断降级为试探档（最多 %d 只 / 单票 ≤%d%% / 段总仓上限 %g%% 不变）"
+                % (temp, ESCAPE_TEMP, gate.get("stage"),
+                   ESCAPE_MAX_PICKS, ESCAPE_SINGLE_PCT,
+                   _to_float(gate.get("position_cap_pct")) or 0.0))
         meta["notes"].append(note)
         meta["escape"] = True
+        # 生效上限写回闸门副本 → 下游额度计算与展示看到同一套数
+        gate = dict(gate)
+        _p_raw = _to_int(gate.get("max_picks"), 0)
+        _s_raw = _to_float(gate.get("single_pos_cap_pct"))
+        gate["max_picks"] = (_p_raw if _p_raw > 0 else ESCAPE_MAX_PICKS)
+        gate["single_pos_cap_pct"] = (_s_raw if (_s_raw is not None and _s_raw > 0)
+                                      else ESCAPE_SINGLE_PCT)
+        gate["escape_downgraded"] = True
+        gate["hard_block"] = False
 
     if hard:
         why = gate.get("hard_block_reason") or gate.get("reason") or "复盘判定禁止开新仓"
@@ -475,8 +578,11 @@ def _judge(cands, gate, ctx=None):
             c["_review_focus"] = True
             c["_review_focus_label"] = "复盘重点·%s" % (f.get("kind_label") or "风向标")
         kept.append(c)
-    picks = _to_int(gate.get("max_picks"), 0)
-    if picks and len(kept) > picks:
+    # 【2026-11-26 修 P0-逃生阀】只数上限：`picks` 为 0 是「本段不许开仓」（退潮段空仓
+    # 语义），不是「无限制」。旧写法 `if picks and ...` 遇 0 走 falsy → 上限整体失效。
+    # 同 10-21「炸板率恒 100%」的 `or` 陷阱，一并治（0 必须用 is None 判定）。
+    picks = _to_int(gate.get("max_picks"), None)
+    if picks is not None and len(kept) > picks:
         for c in kept[picks:]:
             drops.append(_drop(c, "复盘只数上限：「%s」段本时段最多 %d 只" % (gate.get("stage"), picks)))
         kept = kept[:picks]
@@ -687,9 +793,10 @@ def _selftest():
     故先把全部落盘目标重定向到临时目录，结束后还原。
     """
     import tempfile
-    global GATE_FILE, APPLIED_FILE, EFFECT_FILE, HISTORY_DIR
-    _bak = (GATE_FILE, APPLIED_FILE, EFFECT_FILE, HISTORY_DIR)
+    global GATE_FILE, APPLIED_FILE, EFFECT_FILE, HISTORY_DIR, REPORTS
+    _bak = (GATE_FILE, APPLIED_FILE, EFFECT_FILE, HISTORY_DIR, REPORTS)
     _tmpd = Path(tempfile.mkdtemp(prefix="rg_selftest_"))
+    REPORTS = _tmpd  # 【2026-11-17 修】_sync_current_copy 写 REPORTS/trade_gate_current.json
     GATE_FILE = _tmpd / "trade_gate.json"
     APPLIED_FILE = _tmpd / "trade_gate_applied.json"
     EFFECT_FILE = _tmpd / "gate_effectiveness.json"
@@ -750,6 +857,22 @@ def _selftest():
     k3, d3, m3 = apply("09:25", cands, g2, {"temperature": 68, "equity": 500000, "cash": 450000})
     _chk(len(k3) > 0 and m3.get("escape"), "逃生阀：温度 68 ≥ 60 → 降级放行")
 
+    # 【2026-11-26 修 P0-逃生阀】退潮段真实形态：picks=0 / single=0（空仓语义由这两个 0 承载）。
+    # 旧实现遇 0 走 falsy → 只数与单票上限双双失效 → 退潮段被降级成「无限制」
+    # （11-26 09:25 实测在 hard_block=True 的退潮段仍派出 1 只买单，击穿空仓防守）。
+    print("[selftest] 逃生阀 · 退潮段空仓语义（picks=0 / single=0）")
+    g_tide = dict(g, stage="退潮", hard_block=True, hard_block_reason="退潮段：亏钱效应扩散",
+                  position_cap_pct=10, single_pos_cap_pct=0, max_picks=0, max_board_days=2)
+    kt1, dt1, mt1 = apply("09:25", cands, g_tide, {"temperature": 30, "equity": 500000, "cash": 450000})
+    _chk(len(kt1) == 0 and len(dt1) == len(cands), "退潮段 + 低温：硬阻断 → 0 放行")
+    kt2, dt2, mt2 = apply("09:25", cands, g_tide, {"temperature": 68, "equity": 500000, "cash": 450000})
+    _chk(len(kt2) <= ESCAPE_MAX_PICKS,
+         "退潮段 + 逃生阀：放行 %d 只 ≤ 试探档 %d 只（空仓语义未被击穿）"
+         % (len(kt2), ESCAPE_MAX_PICKS))
+    _chk(mt2.get("escape"), "退潮段 + 逃生阀：留痕标记 escape=True")
+    _chk(any("只数上限" in d["reason"] for d in dt2) or len(kt2) <= ESCAPE_MAX_PICKS,
+         "退潮段 + 逃生阀：超出试探档只数的候选被「只数上限」剔除")
+
     print("[selftest] fail-open")
     k4, d4, m4 = apply("13:40", cands, None, {})
     _chk(k4 == cands and not d4 and not m4["applied"], "无闸门 → 原样放行")
@@ -760,15 +883,34 @@ def _selftest():
     _chk(_norm_code("000066") == _norm_code("000066.SZ") == _norm_code("sz000066"),
          "6 位代码归一一致")
 
+    print("[selftest] current 副本内置维护（2026-11-17 修）")
+    _cur = REPORTS / "trade_gate_current.json"
+    _sync_current_copy(dict(g, asof="2099-01-02"), log=lambda *_: None)
+    _chk(_cur.exists() and json.loads(_cur.read_text(encoding="utf-8"))["asof"] == "2099-01-02",
+         "首次同步：current 副本写入 asof=2099-01-02")
+    _sync_current_copy(dict(g, asof="2099-01-03"), log=lambda *_: None)
+    _chk(json.loads(_cur.read_text(encoding="utf-8"))["asof"] == "2099-01-03",
+         "asof 更新：current 副本被刷新为 2099-01-03")
+    _sync_current_copy(dict(g, asof="2099-01-03"), log=lambda *_: None)
+    _chk(json.loads(_cur.read_text(encoding="utf-8"))["asof"] == "2099-01-03",
+         "幂等：重复同步不报错、内容不变")
+    _sync_current_copy({}, log=lambda *_: None)
+    _chk(json.loads(_cur.read_text(encoding="utf-8"))["asof"] == "2099-01-03",
+         "空闸门：不覆盖已有副本")
+
     print("\n调度器侧必须与此保持一致的规则（改动需同步两处）：")
     for ln in ("1) mode != enforce → 不拦截", "2) hard_block → 清空（除非 temperature ≥ %d）" % ESCAPE_TEMP,
-               "3) cooling 命中 → 剔除", "4) board_days > max_board_days → 剔除",
-               "5) 只数 > max_picks → 截断", "6) 额度 ≤0 → 清空；否则 avail = min(额度, 现金)",
-               "7) 任何异常 → 放行"):
+               "3) 逃生阀降级 = 换试探档：picks=0/single=0 → %d 只 / 单票 ≤%d%%（段 cap 不变）"
+               % (ESCAPE_MAX_PICKS, ESCAPE_SINGLE_PCT),
+               "4) cooling 命中 → 剔除", "5) board_days > max_board_days → 剔除",
+               "6) 只数 > max_picks → 截断（max_picks=0 是「0 只」，不是「无限制」）",
+               "7) 额度 ≤0 → 清空；否则 avail = min(额度, 现金)",
+               "8) single_pos_cap_pct=0 是「单票 0%」，不是「无上限」",
+               "9) 任何异常 → 放行"):
         print("   " + ln)
     print("\n结果: " + ("全部通过 ✅" if ok else "存在失败 ❌"))
     # 还原真实路径并清理临时目录（防止全局常量被本次自检永久改写）
-    (GATE_FILE, APPLIED_FILE, EFFECT_FILE, HISTORY_DIR) = _bak
+    (GATE_FILE, APPLIED_FILE, EFFECT_FILE, HISTORY_DIR, REPORTS) = _bak
     try:
         shutil.rmtree(_tmpd, ignore_errors=True)
 
@@ -777,6 +919,53 @@ def _selftest():
 
     print("[selftest] 落盘目标已还原（本次自检写的是临时目录，未污染真实 reports/）")
     return 0 if ok else 1
+
+
+def _caliber_mismatch(gate):
+    """闸门**口径**校验：把闸门的 stage_signals 与工作台实时快照四项对表。
+
+    【2026-11-26 新增】--health 此前只验 asof（闸门链断裂会报警），
+    但**不验口径** → 盘中/竞价口径写出的失真闸门（例如工作台 09:0x 触发的
+    review_deep 写出的 zt=0/dt=0「冰点段废闸门」）照样报 [ok]，
+    台账已催办 3 次（6e0379523d「--health 假阳性第 3 次」、
+    31bbe9d5fb「asof 正确但口径错误仍报 [ok]」）。
+
+    对表口径：zt=zt_count、dt=dt_count、ratio=up/down、zb_rate=zb/(zt+zb)*100。
+    工作台不可用 → 返回 None（跳过校验，绝不误报）。
+    """
+    try:
+        snap = _fetch_market_snapshot(timeout=10, as_object=False)
+    except Exception:
+        return None
+    try:
+        sig = (gate or {}).get("stage_signals") or {}
+        b = snap.get("breadth") or {}
+        up, down = b.get("up"), b.get("down")
+        zt_t = snap.get("zt_count")
+        dt_t = snap.get("dt_count")
+        zb_t = snap.get("zb_count")
+        if not (zt_t and dt_t is not None and up and down and zb_t is not None):
+            return None
+        ratio_t = round(float(up) / max(float(down), 1), 2)
+        zbr_t = round(float(zb_t) / max(float(zt_t) + float(zb_t), 1) * 100, 1)
+        pairs = [("zt", sig.get("zt"), zt_t), ("dt", sig.get("dt"), dt_t),
+                 ("ratio", sig.get("ratio"), ratio_t), ("zb_rate", sig.get("zb_rate"), zbr_t)]
+        bad = []
+        for name, gv, tv in pairs:
+            if gv is None:
+                bad.append("%s 缺失(快照 %s)" % (name, tv))
+                continue
+            try:
+                if abs(float(gv) - float(tv)) >= 0.011:
+                    bad.append("%s 闸门 %s ≠ 快照 %s" % (name, gv, tv))
+            except (TypeError, ValueError):
+                bad.append("%s 不可比(闸门 %s / 快照 %s)" % (name, gv, tv))
+        if bad:
+            return {"ok": False, "detail": "；".join(bad)}
+        return {"ok": True, "detail": "四项口径与收盘快照一致"}
+    except Exception as e:
+        log_util.quiet_warn("review_gate.py:_caliber_mismatch", e)
+        return None
 
 
 def gate_health(today=None):
@@ -834,6 +1023,20 @@ def gate_health(today=None):
         out["message"] = "复盘闸门已备妥明日（asof=%s · %s段 · %s）" % (
             out["asof"], g_next.get("stage"),
             "约束" if g_next.get("mode") == "enforce" else "仅观察")
+        # ---- 【2026-11-26】口径校验（--health 假阳性的正解）----
+        # 只在「该闸门声称由**今日**复盘生成」时对表：它必须与今日快照一致。
+        # （盘中约束今日的闸门是昨日盘后生成的，拿今天的盘中快照比必然不符 → 跳过）
+        try:
+            src = str(out["gate"].get("source_review_date") or "")[:10]
+            if src == today.isoformat():
+                mm = _caliber_mismatch(out["gate"])
+                if mm is not None:
+                    out["caliber"] = mm
+                    if not mm.get("ok"):
+                        out["level"] = "warn"
+                        out["message"] += "｜⚠️ 口径不符：%s" % mm.get("detail")
+        except Exception as _e:
+            log_util.quiet_warn("review_gate.py:gate_health", _e)
         return out
 
     # 都不可用 → 陈旧 / 缺失 / 损坏，报错并说明影响
@@ -893,6 +1096,21 @@ class _SnapshotAdapter:
         if not isinstance(self.breadth, dict):
             self.breadth = {}
 
+        # ---- 【2026-11-26 修 P0-口径】展示截断版不能当统计口径 ----
+        # /api/dashboard 的 zt_pool 是 [:60] 截断版、zb_pool 是 [:40] 截断版，
+        # 而 zt_count / zb_count 是全量计数（data_fetcher.snapshot）。
+        # 本模块走 HTTP 快照，进程内 MarketData 走的是 self.zt_pool（全量）——
+        # 于是**闸门路径与工作台路径同源同刻可判反**（ADR-0040 必查坑 #2）。
+        # 11-26 实测：闸门 zt=60 / zb_rate=32.6，真值 zt=65 / zb_rate=30.85。
+        # 这里把 *_pool_all 提升为引擎口径的 zt_pool / zb_pool，与进程内路径对齐；
+        # 截断版另存 *_pool_display，仅供需要"前 N 只"的展示场景使用。
+        for _short, _full in (("zt_pool", "zt_pool_all"), ("zb_pool", "zb_pool_all")):
+            _fv = self._d.get(_full)
+            _sv = self._d.get(_short)
+            if isinstance(_fv, list) and (not isinstance(_sv, list) or len(_fv) > len(_sv)):
+                setattr(self, _short + "_display", _sv)
+                setattr(self, _short, _fv)
+
     def snapshot(self):
         return self._d
 
@@ -917,6 +1135,84 @@ def _fetch_market_snapshot(timeout=20, as_object=False):
     with urllib.request.urlopen(url, timeout=timeout) as resp:
         d = json.loads(resp.read())
     return _SnapshotAdapter(d) if as_object else d
+
+
+def _snapshot_complete(snap):
+    """快照完整性判定：闸门判段所需的 4 个信号是否齐备。
+
+    【2026-11-26 修 P0-口径】闸门判段依赖 zt / dt / ratio / zb_rate 四个信号，
+    其中 **ratio 来自 breadth（涨跌比）**。应用重启后全A扫描尚未完成时，
+    breadth 为空 → ratio = None。而 mood_engine 的「分歧」规则带
+    `s["ratio"] is not None` 前置条件 → **ratio 缺失会静默把阶段翻掉**
+    （11-26 实测：zt=65/dt=5/ratio=None → 阶段从「分歧」翻成「反包」，
+     仓位上限从 40% 掉到 30%）。这不是"数据缺失显示为 --"，是判错段。
+
+    完整条件：breadth 有 up/down（ratio 可算）+ 涨停池非空（zt 可算）。
+    """
+    try:
+        b = getattr(snap, "breadth", None) or {}
+        if not isinstance(b, dict):
+            return False
+        if not (b.get("up") and b.get("down")):
+            return False
+        zt = getattr(snap, "zt_pool", None) or []
+        return bool(zt)
+    except Exception:
+        return False
+
+
+def _fetch_complete_snapshot(timeout=20, retries=4, wait=8, log=print):
+    """取快照并等它「完整」—— 应用重启后全A扫描要 ~20 秒才回填 breadth。
+
+    拿不到完整快照就返回 None（调用方必须拒绝写盘，不得用残缺信号判段）。
+    """
+    for i in range(max(1, retries)):
+        try:
+            snap = _fetch_market_snapshot(timeout=timeout, as_object=True)
+        except Exception as e:
+            log("[gate_auto] 快照抓取失败(%s/%s): %s" % (i + 1, retries, e))
+            snap = None
+        if snap is not None and _snapshot_complete(snap):
+            return snap
+        if i < retries - 1:
+            log("[gate_auto] 快照不完整（涨跌比缺失 = 全A扫描未回填）… %d 秒后重试" % wait)
+            time.sleep(wait)
+    return None
+
+
+def _sync_current_copy(gate, log=print):
+    """把闸门快照同步到 trade_gate_current.json（调度器盘前优先读的「生效副本」）。
+
+    【2026-11-17 修 · 闸门副本维护内置化】
+    历史缺陷：auto_build 自身从不写 trade_gate_current.json，完全依赖 automation
+    prompt 里的一句 `cp trade_gate.json trade_gate_current.json`（步骤 3.5）。
+    结果：任何人直接跑 `python review_gate.py --auto`（诊断、手工补跑、别的调度器）
+    都只更新 main，current 停在旧 asof；次日 10:59 工作台 review_deep 覆写 main 后，
+    调度器两个文件都读不到「约束当日」的闸门 → 全天 fail-open（ADR-0040 P0-① 复发）。
+
+    本函数把这一步收进代码，使 --auto 命令自身幂等地维护副本：
+      · 只写「闸门内容」，不判断是否该写 —— 判断在调用方（幂等出口 / 新建出口 / 今日保护）。
+      · 用 _write_json 原子写，避免调度器读到半截 JSON。
+      · 失败只告警不抛异常（副本维护失败不应阻断主闸门生成）。
+    """
+    if not isinstance(gate, dict) or not gate.get("asof"):
+        log("[gate_auto] WARN current 副本同步跳过：源闸门无 asof")
+        return False
+    cur = REPORTS / "trade_gate_current.json"
+    old_asof = None
+    try:
+        if cur.exists():
+            old_asof = str((json.loads(cur.read_text(encoding="utf-8")) or {}).get("asof"))[:10]
+    except Exception:
+        old_asof = None
+    new_asof = str(gate.get("asof"))[:10]
+    if old_asof == new_asof:
+        log("[gate_auto] current 副本已就绪（asof=%s，无需重写）" % new_asof)
+        return True
+    ok = _write_json(cur, gate)
+    if ok:
+        log("[gate_auto] current 副本已同步: %s（asof %s → %s）" % (cur.name, old_asof, new_asof))
+    return ok
 
 
 def auto_build(force=False, mode="enforce", log=print):
@@ -953,9 +1249,14 @@ def auto_build(force=False, mode="enforce", log=print):
         target = today
     existing = load_gate(target)
     if existing and not force:
+        # 【2026-11-17 修】幂等跳过也要维护 current 副本：
+        # 盘后 review_deep 常已把明日闸门写进 main，导致这里 early-return；
+        # 过去直接 return 不碰 current → 靠 automation prompt 的 cp 兜底，
+        # 一旦有人直接跑 --auto，current 就会陈旧 → 次日盘中 fail-open。
+        _sync_current_copy(existing, log)
         result["ok"] = True
         result["asof"] = existing.get("asof")
-        result["reason"] = ("目标生效日闸门已就绪（asof=%s, mode=%s），未覆盖"
+        result["reason"] = ("目标生效日闸门已就绪（asof=%s, mode=%s），未覆盖；current 副本已同步"
                             % (existing.get("asof"), existing.get("mode")))
         log("[gate_auto] %s" % result["reason"])
         return result
@@ -967,12 +1268,13 @@ def auto_build(force=False, mode="enforce", log=print):
     # 修法：若磁盘上已存在约束**今日**的闸门，且本次生成的是**明日**闸门，
     #      则把今日闸门另存为 trade_gate_current.json（供调度器读取），
     #      再让 trade_gate.json 承载明日闸门 —— 两者不再互相覆盖。
+    _preserved_today_gate = False  # 【2026-11-17 修】标记 step1.5 是否已把「今日闸门」存入 current
     _today_gate = load_gate(today, strict=True)
     if _today_gate and not force:
         try:
             cur_path = REPORTS / "trade_gate_current.json"
-            cur_path.write_text(json.dumps(_today_gate, ensure_ascii=False, indent=2),
-                                encoding="utf-8")
+            ok = _write_json(cur_path, _today_gate)
+            _preserved_today_gate = bool(ok)
             result["ok"] = True
             result["asof"] = _today_gate.get("asof")
             result["reason"] = ("已保留今日生效闸门（asof=%s）到 %s；"
@@ -988,7 +1290,14 @@ def auto_build(force=False, mode="enforce", log=print):
         import review_deep
         # 【2026-10-21 修 P0-5】必须用**对象**快照：六引擎是属性访问（md.zt_pool 等），
         # 传 dict 会让四个引擎 AttributeError 被 safe() 吞掉 → 写出降级空闸门。
-        snapshot = _fetch_market_snapshot(as_object=True)
+        # 【2026-11-26 修 P0-口径】还必须等快照「完整」：应用重启后全A扫描未回填时
+        # breadth 为空 → ratio=None → 阶段被静默翻掉（分歧→反包，实测）。
+        snapshot = _fetch_complete_snapshot(log=log)
+        if snapshot is None:
+            result["reason"] = ("市场快照不完整（涨跌比缺失）→ 已中止写盘："
+                                "残缺信号会把阶段判错（宁可不写，也不能用错段约束明日）")
+            log("[gate_auto] ERROR %s" % result["reason"])
+            return result
         review = review_deep.review_deep(snapshot, None, do_archive=False)
     except Exception as e:
         result["reason"] = "复盘引擎失败: %s" % e
@@ -1032,6 +1341,29 @@ def auto_build(force=False, mode="enforce", log=print):
                             "已中止写盘：宁可用既有闸门也不用空闸门")
         log("[gate_auto] ERROR %s" % result["reason"])
         return result
+
+    # ---- 归档补写（【2026-11-26 修】修 review_modes 归档断链）----
+    # 此前 data/review_modes/<date>.json 只由工作台 /api/review_deep 写，而该接口
+    # 在 09:0x 竞价时段 zt_pool 为空 → archive() 直接 return None → 当日不落档。
+    # 结果 11-18 起连续 6 个交易日归档缺失 → verify_yesterday 引擎长期降级为
+    # 「归档读取失败」，全量溢价验证（连板溢价兑现率）形同虚设。
+    # 现在由盘后自动任务用**收盘全量快照**补写归档；这里单独调 archive() 而不用
+    # do_archive=True —— 后者会连带触发 build_gate(write=True)，与本函数重复写盘。
+    # ⚠ 必须排在两道降级守卫**之后**：引擎降级时写出来的归档是残缺的
+    # （cycle={} / stage=None），会覆盖当天已有的好归档（11-26 实测踩到）。
+    try:
+        _arch = review_deep.archive(snapshot, review)
+        log("[gate_auto] 复盘归档: %s" % (_arch or "未写入（休市日或无涨停数据）"))
+    except Exception as e:
+        log("[gate_auto] WARN 复盘归档失败(不影响闸门): %s" % e)
+
+    # 【2026-11-17 修】新建路径也要维护 current 副本（否则直接跑 --auto 时 current 陈旧）。
+    # 但若 step1.5 刚把「今日闸门」存进 current（盘前误跑场景），绝不能用明日闸门覆盖，
+    # 否则当天盘中本该约束今日的闸门会被顶掉 —— 这正是 10-21 fail-open 的根因。
+    if not _preserved_today_gate:
+        _sync_current_copy(gate, log)
+    else:
+        log("[gate_auto] current 保留今日闸门（step1.5），不覆盖为明日闸门")
 
     result["built"] = True
     result["asof"] = gate.get("asof")
@@ -1096,7 +1428,10 @@ def main(argv=None):
         # 独立生成（不依赖 Flask）：自己抓 dashboard
         try:
             import review_deep
-            md = _fetch_market_snapshot(as_object=True)
+            md = _fetch_complete_snapshot(log=print)
+            if md is None:
+                print("市场快照不完整（涨跌比缺失）→ 中止写盘（残缺信号会把阶段判错）")
+                return 2
         except Exception as e:
             print("无法取得市场数据（需工作台在跑）: %s" % e)
             return 2

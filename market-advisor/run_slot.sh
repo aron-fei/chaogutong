@@ -206,4 +206,33 @@ fi
 
 write_status "$STAGE" "$RC" "$HTML" "ok"
 log "=== done exit=$RC 耗时 $(( $(date +%s) - START_TS ))s 报告=$(basename "$NEW") ==="
+
+# ===========================================================================
+# 【2026-11-26 新增】盘后复盘时段顺带生成次日复盘闸门（launchd 兜底，无需 bootstrap）
+# ---------------------------------------------------------------------------
+# 背景：15:35 闸门生成原本只由 WorkBuddy 应用内 automation 驱动 → 应用离线就断链
+#       （11-24 应用整天未运行 → 11-25 全天闸门 fail-open，连续 2 天）。
+#       新增 com.marketadvisor.gate1535.plist 作为独立 15:35 槽，但本机
+#       launchctl bootstrap 报 I/O error（连已加载的 plist 也一样，见 10-21 记录），
+#       新 plist 要等下次登录才被 launchd 扫到。
+#
+# 这里把闸门生成挂到**已加载**的 15:30「盘后复盘」槽尾部：run_slot.sh 是脚本，
+# launchd 每次执行都重新读 → 改动立即生效，无需 bootstrap。收盘口径在 15:00 后
+# 已就绪，15:30 生成比 15:35 更早更安全。
+# 闸门生成失败**不影响**本槽报告产出（只记日志与状态）。
+# ===========================================================================
+if [ "$STAGE" = "盘后复盘" ]; then
+  if [ -x "$SCRIPT_DIR/run_gate1535.sh" ]; then
+    log "触发盘后闸门生成（15:35 闸门 automation 的 launchd 兜底）"
+    "$SCRIPT_DIR/run_gate1535.sh" >> "$RUNNER_LOG" 2>&1
+    GATE_RC=$?
+    log "盘后闸门生成 exit=$GATE_RC"
+    if [ "$GATE_RC" != 0 ]; then
+      log "WARN 盘后闸门生成未完全成功（exit=$GATE_RC），详见 gate_status.json"
+    fi
+  else
+    log "WARN 未找到 run_gate1535.sh，跳过盘后闸门生成"
+  fi
+fi
+
 exit $RC

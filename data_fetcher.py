@@ -874,6 +874,9 @@ class MarketData:
 
             rows.append({
                 "code": s["code"], "name": s["name"], "lianban": lb,
+                # 【2026-11-17 修】透传东财「涨停统计」(如 3/2=3天2板)，
+                # 供前端 boardLabel() 区分「连续 N 板」与「N天M板」，避免华胜天成被显示成首板。
+                "stat": s.get("stat", ""),
                 "industry": ind, "score": score,
                 "seal_ratio": round(seal_ratio, 2),
                 "fund_yi": s["fund_yi"], "mv_yi": mv,
@@ -936,12 +939,17 @@ class MarketData:
                 "indices": self.indices,
                 "sectors": self.sectors,
                 "concepts": self.concepts,
+                # 【2026-11-26 修 P0-口径】zt_pool / zb_pool 是**展示用截断版**（[:60]/[:40]），
+                # zt_count / zb_count 是**全量计数** —— 两者不是同一口径。
+                # 任何做统计的调用方（引擎 / 闸门 / 行业分布）都必须用 *_all 或 *_count，
+                # 否则涨停家数会少算（11-26 实测 60 vs 65），炸板率被抬高、闸门判段失真。
                 "zt_pool": zt[:60],
-                "zt_pool_all": zt,   # 全量（涨停池板块分组聚合用）
+                "zt_pool_all": zt,   # 全量（涨停池板块分组聚合用 + 引擎统计口径）
                 "zt_count": len(self.zt_pool),
                 "dt_pool": self.dt_pool,
                 "dt_count": len(self.dt_pool),
                 "zb_pool": self.zb_pool[:40],
+                "zb_pool_all": list(self.zb_pool),  # 全量（引擎统计口径）
                 "zb_count": len(self.zb_pool),
                 "ladder": {str(k): [s["name"] for s in v][:8]
                            for k, v in ladder.items()},

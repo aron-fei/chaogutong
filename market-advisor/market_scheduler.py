@@ -1142,12 +1142,52 @@ def fetch_theme_arb_rows(stage=None):
         return []
 
 
+def fetch_battle_plan_rows(stage=None):
+    """ADR-0052：盘后行情复盘「作战计划」→ 供票源「盘后作战」。
+
+    纯文件读 REPORTS_DIR/battle_plan_latest.json（17:35 market_review.py 产出），
+    零网络、零副作用。校验 for_date == 今日（过期计划不放行，防陈旧票）。
+    tag=复盘重点 的票去重不收（gate focus 已有独立源，避免双计共识）。
+    fail-open：文件缺失 / 日期不符 / 格式异常 → []
+    """
+    try:
+        if not BATTLE_PLAN_ENABLED:
+            return []
+        if stage and stage not in BATTLE_PLAN_STAGES:
+            return []
+        import datetime as _dt
+        _today = _dt.date.today().strftime("%Y-%m-%d")
+        with open(BATTLE_PLAN_FILE, encoding="utf-8") as f:
+            j = json.load(f)
+        if not isinstance(j, dict) or str(j.get("for_date")) != _today:
+            return []
+        out = []
+        for p in (j.get("picks") or []):
+            if not isinstance(p, dict):
+                continue
+            if str(p.get("tag") or "").strip() == "复盘重点":
+                continue          # 与 REVIEW_FOCUS 源同源，去重防双计
+            code = _norm_code(p.get("code"))
+            name = str(p.get("name") or code)
+            if len(code) != 6 or "ST" in name.upper():
+                continue
+            out.append({"symbol": code, "name": name,
+                        "tag": p.get("tag"), "plan": p.get("plan"),
+                        "thesis_txt": p.get("thesis")})
+            if len(out) >= BATTLE_PLAN_MAX:
+                break
+        return out
+    except Exception as e:
+        print("[battle_plan] 读取失败(放行): %s" % e)
+        return []
+
+
 def _gather_pool_contributions(xgb, first_board_candidates, pool,
                                plate_limit_up_stocks, plate_all_active_stocks,
                                sorted_reasons, hot_themes, intel_candidates,
                                bottom_surge_rows=None,
                                review_focus_rows=None, self_rows=None,
-                               theme_arb_rows=None):
+                               theme_arb_rows=None, battle_plan_rows=None):
     """归集所有模块的候选股，统一成 contribution 列表。"""
     contribs = []
     # 1) 底部突围 · 首板新星 (board=1)
@@ -1495,6 +1535,21 @@ def _gather_pool_contributions(xgb, first_board_candidates, pool,
             })
     except Exception as e:
         print(f"[WARN] 静默异常已显式化 @theme_arb_contrib: {e}")
+
+    # 14) 盘后作战（ADR-0052）——龙虎榜净买 / 主力净流入低吸票（17:35 行情复盘产出）。
+    try:
+        for _b in (battle_plan_rows or []):
+            contribs.append({
+                "symbol": _b.get("symbol"), "name": _b.get("name"),
+                "source": BATTLE_PLAN_SOURCE, "signal": BATTLE_PLAN_SIGNAL,
+                "board_days": None, "last_pct": None,
+                "plates": [],
+                "thesis": "盘后作战·%s｜%s" % (
+                    _b.get("tag") or "作战",
+                    (_b.get("thesis_txt") or _b.get("plan") or "")[:70])
+            })
+    except Exception as e:
+        print(f"[WARN] 静默异常已显式化 @battle_plan_contrib: {e}")
     return contribs
 
 def is_trading_day():
@@ -1508,7 +1563,7 @@ def is_trading_day():
         return today_weekday < 5
 
 # =====================================================================
-# 时段窗口守卫 + 行情就绪守卫（2026-10-08 新增，ADR-0042）
+# 时段窗口守卫 + 行情就绪守卫（2026-10-08 新增，ADR-0052）
 #
 # 【背景】桌面端自动化在 app 唤醒后会把错过的日程"补跑"，于是节后首日 09:10/09:12/09:16
 #   连跑 11:40/14:40 三档，抓的是盘前空快照（成交额 0、温度 0、涨停 0、现价 0），
@@ -2674,7 +2729,7 @@ def run_backtest(xgb, emit_sell=True):
     lines = []
     lines.append("===========================================================")
     lines.append("    📈 【强者恒强战法 - 模拟实盘回归测试与滚动持仓看板】")
-    lines.append("===========================================================\\n")
+    lines.append("===========================================================")
     
     lines.append("【一、 50万固额账户多头活跃持仓监控】")
     current_market_value = 0.0
@@ -3623,6 +3678,21 @@ THEME_ARB_MAX         = 8       # 只取扫描池前 N 只"抢筹逼近/跟涨�
 THEME_ARB_STAGES      = ("13:40", "14:40")
 THEME_ARB_ENABLED     = True     # 总开关；工作台没起时自动空转
 
+# ----------------------------------------------------------------------------
+# ADR-0052（2026-11-18）：「盘后作战」供票源 —— 行情复盘闭环的机器可读落点。
+#   17:35 盘后行情复盘（market_review.py）产出 battle_plan_latest.json：
+#   龙虎榜净买 TOP / 主力净流入可低吸 / 今日派单复核票。
+#   接入范式与 ADR-0041 一致：fail-open、只进 13:40/14:40（09:25 是竞价打板
+#   通道、口径不同不掺新源，竞价观察由 md 报告承担）、复盘重点 tag 去重
+#   （gate focus 已有独立源，避免双计共识）。
+# ----------------------------------------------------------------------------
+BATTLE_PLAN_SOURCE    = "盘后作战"
+BATTLE_PLAN_SIGNAL    = 71.0
+BATTLE_PLAN_MAX       = 6
+BATTLE_PLAN_STAGES    = ("13:40", "14:40")
+BATTLE_PLAN_ENABLED   = True     # 总开关（一键回退）
+BATTLE_PLAN_FILE      = os.path.join(REPORTS_DIR, "battle_plan_latest.json")
+
 # 工作台目录：与 BOTTOM_SURGE_PY 同源（同一台机、同一仓库），推导而非硬编码第二处
 MONITOR_DIR = os.path.dirname(BOTTOM_SURGE_PY)
 WATCHLIST_JSON = os.path.join(MONITOR_DIR, "data", "watchlist.json")
@@ -3634,9 +3704,11 @@ THEME_ARB_TIMEOUT = 4.0
 STAGE_SOURCE_WHITELIST = {
     "09:25": None,   # 早盘集合竞价涨停池：底部突围/连板主线/题材双雄龙头(涨停票为主，打板专用)
     "13:40": {"午后强势", "题材双雄", "底部突围", "底部放量",
-              REVIEW_FOCUS_SOURCE, SELF_SOURCE, THEME_ARB_SOURCE},   # ADR-0041 接入三源
+              REVIEW_FOCUS_SOURCE, SELF_SOURCE, THEME_ARB_SOURCE,
+              BATTLE_PLAN_SOURCE},   # ADR-0041 三源 + ADR-0052 盘后作战
     "14:40": {"龙首阴", "题材双雄", "补涨·首阴", "补涨池·高低切", "底部放量",
-              REVIEW_FOCUS_SOURCE, SELF_SOURCE, THEME_ARB_SOURCE},   # ADR-0041 接入三源
+              REVIEW_FOCUS_SOURCE, SELF_SOURCE, THEME_ARB_SOURCE,
+              BATTLE_PLAN_SOURCE},   # ADR-0041 三源 + ADR-0052 盘后作战
 }
 
 EXIT_TEMP_GATE   = 45      # 10:40 持仓处理：温度低于此值一律偏向清仓
@@ -3902,11 +3974,30 @@ def decide_exit(pct, mkt_temp=50, auction_ref=None):
     return "SELL_HALF", "🔴 【减仓一半】走势弱于预期缺乏护盘，反抽砍一半，尾盘不红则全清。"
 
 
+# ADR-0051：多策略路由的仓位覆盖（仅冰点防守/反转/趋势换赛道时置位，其余为 None）
+# 由 generate_report 在路由判定后设置；_sentiment_pos_factor 读取它替代「冰点=0」。
+# 单线程按时段执行；每次 generate_report 开头都会重算/重置，不跨时段残留。
+_STRATEGY_POS_OVERRIDE = None
+
+
 def _sentiment_pos_factor(mkt_temp):
     """按大盘温度给本时段【总买入仓位】系数（占可用现金比例）。
     与报告 advice_pos 情绪分档同向：高潮重兵、主升适度、混沌轻仓、退潮极轻、冰点空仓。
     单票仍受 validate_order_plan_cash 的 25% 上限硬约束（2026-09-21 用户需求：
-    手数随当天情绪浮动，替代原固定 15% 单票仓位）。"""
+    手数随当天情绪浮动，替代原固定 15% 单票仓位）。
+
+    ADR-0051：冰点防守模式下，若路由已放行低吸候选且设置了 _STRATEGY_POS_OVERRIDE，
+    用路由仓位（≤15%）替代原「temp<40 → 0」，使防守票能真正生成买单（而非放行候选却0手）。
+    真·系统性风险不设 override，仍归零。"""
+    global _STRATEGY_POS_OVERRIDE
+    if _STRATEGY_POS_OVERRIDE is not None:
+        try:
+            ov = float(_STRATEGY_POS_OVERRIDE)
+            if 0 < ov <= 0.25:
+                print("[strategy_router] 仓位覆盖: 温度档归零 → 防守模式 %.0f%%" % (ov * 100))
+                return ov
+        except (TypeError, ValueError):
+            pass
     t = mkt_temp or 50
     if t >= 75:
         return 0.60   # 高潮逼空期：总仓 60%
@@ -4051,6 +4142,20 @@ REVIEW_GATE_FILE        = os.path.join(REPORTS_DIR, "trade_gate.json")
 REVIEW_GATE_CURRENT     = os.path.join(REPORTS_DIR, "trade_gate_current.json")
 REVIEW_GATE_APPLIED     = os.path.join(REPORTS_DIR, "trade_gate_applied.json")
 REVIEW_GATE_ESCAPE_TEMP = 60      # 逃生阀阈值：次日实时情绪温度 ≥ 此值 → 硬阻断降级
+# 【2026-11-26 修 P0-逃生阀】逃生阀降级后的「试探档」硬上限。
+# 背景：退潮段 _POLICY = (cap 10, single 0, picks 0, max_board 2, hard True)，
+# 即「空仓」语义由 picks=0 / single=0 承载。逃生阀把 hard 降级为 False 后，
+# 旧代码 `if picks and len(kept) > picks` 遇到 picks=0 走 falsy 分支 → **只数上限失效**，
+# `if eq and single_pct` 遇到 single=0 同样 falsy → **单票上限失效**，
+# 于是退潮段「空仓」被降级成「无限制」，11-26 09:25 实测派出 1 只买单（2.48% 权益）。
+#
+# 修法（与 10-21「炸板率恒 100%」的 `or` 陷阱同根因，同一处治法）：
+#   ① 所有「0 是否有意义」的判据一律用 `is None` 判定，不用 truthiness；
+#   ② 逃生阀降级不再让「空仓」语义整体消失，而是**换档**到显式的试探档
+#      （最多 1 只、单票 ≤ 试探档上限），并保留段总仓上限 cap 不变。
+# 数值对齐 review_gate.py 的「冰点」段试探档（single 8% / picks 1），两处必须同步。
+REVIEW_GATE_ESCAPE_MAX_PICKS   = 1     # 逃生阀降级后最多派 1 只
+REVIEW_GATE_ESCAPE_SINGLE_PCT  = 8     # 逃生阀降级后单票上限 8%（= 冰点档试探上限）
 
 _ACTIVE_REVIEW_GATE = None        # 本进程当前生效闸门（每个时段进程只跑一次，无并发）
 _REVIEW_GATE_META   = {}
@@ -4280,15 +4385,24 @@ def _gate_single_budget(avail, n_picks):
         if not _gate_cap_is_total():
             return None
         g = _ACTIVE_REVIEW_GATE or {}
-        picks = max(1, _rg_int(g.get("max_picks")) or 1)
+        # 【2026-11-26 修 P0-逃生阀】`max_picks` / `single_pos_cap_pct` 的 0 是有意义的值
+        # （退潮段 = 空仓：0 只 / 单票 0%），不是「缺失」。旧写法 `or 1` / `if ... and single_pct`
+        # 遇 0 走 falsy → 上限整体失效（退潮段被降级成无限制，11-26 09:25 实测派出买单）。
+        # 同 10-21「炸板率恒 100%」的 `or` 陷阱，一并治。
+        _picks_raw = g.get("max_picks")
+        _picks = _rg_int(_picks_raw) if _picks_raw is not None else None
+        if _picks is not None and _picks <= 0:
+            return 0.0          # 段语义 = 本时段 0 只 → 单笔额度 0 → 不许开仓
+        picks = max(1, _picks if _picks is not None else 1)
         n = max(1, int(n_picks or picks))
         # 只数取「实际候选数」与「闸门允许只数」的较小者，避免额度被摊薄到不存在的票上
         eff_n = max(1, min(n, picks))
         per = float(avail) / eff_n
         # 单票上限硬约束（闸门 single_pos_cap_pct 优先于段上限÷只数）
         eq = _rg_float((_GATE_EQ_CACHE or {}).get("total_equity"))
-        single_pct = _rg_float(g.get("single_pos_cap_pct"))
-        if eq and single_pct:
+        _single_raw = g.get("single_pos_cap_pct")
+        single_pct = _rg_float(_single_raw) if _single_raw is not None else None
+        if eq and single_pct is not None:
             per = min(per, single_pct / 100.0 * eq)
         return per
     except Exception as e:
@@ -4343,6 +4457,65 @@ def _gate_info_items():
                          "note": "🔒 复盘闸门（%s段）适用：%d 只候选被约束，详见工作台「复盘模式」"
                                  % ((_ACTIVE_REVIEW_GATE or {}).get("stage"), len(_REVIEW_GATE_DROPS))})
     return items
+
+
+def _gate_position_text(advice_pos):
+    """【2026-11-26 修 P0-报告闸门不同源】报告仓位口径必须与闸门同源。
+
+    背景：报告的 `recommended_position` / 「仓位控制: 建议保持在 X」取自
+    `classify_market_phase()` 的**实时**情绪分档（按当下涨跌家数/涨跌停数推的），
+    而真正约束今日派单的是**昨日复盘闸门**（_POLICY 段位上限）。两者是两套口径：
+    11-26 09:25 实测 —— 闸门是退潮段（cap 10% / picks 0 / hard_block），
+    报告却写「仓位控制: 建议保持在 50%-70%」+「📈 修复/主升期」，
+    与 ADR-0049「报告显示的仓位 = 实际派单用的仓位」直接相悖，且会误导用户。
+
+    修法：闸门生效时，报告仓位改用闸门口径（更严者为准）；闸门不生效时沿用原分档。
+    返回 (展示文案, 约束说明)，供报告与订单计划共用。
+
+    口径合成规则（保守）：
+      · 闸门 hard_block 未降级 → 「0%（复盘闸门禁止开新仓）」
+      · 否则取 min(实时分档上限, 闸门段总仓上限)；
+        再叠加只数/单票上限（若有）作为说明文字。
+    """
+    try:
+        g = _ACTIVE_REVIEW_GATE
+        if not g:
+            return advice_pos, ""
+        stage = g.get("stage") or ""
+        cap = _rg_float(g.get("position_cap_pct"))
+        picks = _rg_int(g.get("max_picks"))
+        single = _rg_float(g.get("single_pos_cap_pct"))
+        esc = bool(g.get("escape_downgraded"))
+        if g.get("hard_block"):
+            return ("0%%（复盘闸门 %s段：禁止开新仓）" % stage,
+                    "复盘闸门 %s段 hard_block=true，今日不开新仓" % stage)
+        # 实时分档文案里的上限百分比（"50%-70%" → 70；"0%-20% (…)" → 20）
+        live_cap = None
+        try:
+            nums = [float(x) for x in re.findall(r"(\d+(?:\.\d+)?)\s*%", str(advice_pos or ""))]
+            if nums:
+                live_cap = max(nums)
+        except Exception:
+            live_cap = None
+        eff = live_cap
+        if cap is not None:
+            eff = cap if eff is None else min(eff, cap)
+        if eff is None:
+            eff = 0.0
+        txt = "%g%%（复盘闸门 %s段上限）" % (eff, stage)
+        bits = []
+        if picks is not None:
+            bits.append("最多 %d 只" % picks)
+        if single is not None:
+            bits.append("单票 ≤%g%%" % single)
+        if esc:
+            bits.append("逃生阀已降级为试探档")
+        note = ("复盘闸门 %s段：总仓 ≤%g%%%s" % (stage, eff,
+                                              ("，" + "、".join(bits)) if bits else ""))
+        return txt, note
+    except Exception as e:
+        print("[gate_pos] 仓位口径合成异常(沿用实时分档): %s" % e)
+        return advice_pos, ""
 
 
 def _write_review_gate_applied(stage, kept, drops, meta):
@@ -4567,11 +4740,41 @@ def _apply_review_gate(stage, candidates, xgb=None, db=None):
         hard = bool(gate.get("hard_block"))
         temp = _rg_float(xgb.get("temperature")) if isinstance(xgb, dict) else None
         notes = []
+        # 【2026-11-26 修 P0-逃生阀】逃生阀 = 硬阻断降级为「试探档」，不是解除全部约束。
+        #
+        # 退潮段的「空仓」语义由 max_picks=0 / single_pos_cap_pct=0 承载（不是由 hard 承载，
+        # hard 只是最后一道保险）。旧实现只把 hard 置 False 就走 else 分支，于是：
+        #   · `if picks and len(kept) > picks`  → picks=0 走 falsy → 只数上限失效
+        #   · `if eq and single_pct`（_gate_single_budget） → single=0 走 falsy → 单票上限失效
+        # 结果退潮段被降级成「无限制」，11-26 09:25 实测在 hard_block=True 的退潮段
+        # 仍派出 1 只买单（¥11891 / 2.48% 权益），完全击穿「空仓防守」。
+        #
+        # 现在：逃生阀触发时**显式换档**到试探档（只数 1 / 单票 8%），
+        # 段总仓上限 cap 保持不变（退潮仍是 10%），其余闸门（冷却/高度/风格）照常生效。
+        # 数值与 review_gate.py 的「冰点」档试探上限一致，两处必须同步。
+        _esc_applied = False
         if hard and temp is not None and temp >= REVIEW_GATE_ESCAPE_TEMP:
             hard = False
-            notes.append("逃生阀：今日实时情绪温度 %.1f ≥ %d，与复盘判定的「%s」背离 → 硬阻断降级为警告"
-                         % (temp, REVIEW_GATE_ESCAPE_TEMP, gate.get("stage")))
+            _esc_applied = True
+            notes.append("逃生阀：今日实时情绪温度 %.1f ≥ %d，与复盘判定的「%s」背离 → 硬阻断降级为试探档"
+                         "（最多 %d 只 / 单票 ≤%d%% / 段总仓上限 %g%% 不变）"
+                         % (temp, REVIEW_GATE_ESCAPE_TEMP, gate.get("stage"),
+                            REVIEW_GATE_ESCAPE_MAX_PICKS, REVIEW_GATE_ESCAPE_SINGLE_PCT,
+                            _rg_float(gate.get("position_cap_pct")) or 0.0))
             print("[review_gate] " + notes[-1])
+
+        # 逃生阀后的「生效上限」写回闸门副本 → 下游（_gate_single_budget 算额度、
+        # _gate_plan_block 展示、applied 留痕、报告仓位文案）看到的是同一套数，
+        # 不会出现「闸门说 1 只、额度按无上限算」这类两套口径。
+        if _esc_applied:
+            gate = dict(gate)
+            _p_raw = _rg_int(gate.get("max_picks"))
+            _s_raw = _rg_float(gate.get("single_pos_cap_pct"))
+            gate["max_picks"] = (_p_raw if _p_raw > 0 else REVIEW_GATE_ESCAPE_MAX_PICKS)
+            gate["single_pos_cap_pct"] = (_s_raw if (_s_raw is not None and _s_raw > 0)
+                                          else REVIEW_GATE_ESCAPE_SINGLE_PCT)
+            gate["escape_downgraded"] = True
+            gate["hard_block"] = False   # 生效语义已是降级后的试探档，展示须与实际一致
 
         if hard:
             why = gate.get("hard_block_reason") or gate.get("reason") or "复盘判定禁止开新仓"
@@ -4606,13 +4809,17 @@ def _apply_review_gate(stage, candidates, xgb=None, db=None):
                     c["_review_focus_label"] = "复盘重点·%s" % (f.get("kind_label") or "风向标")
                     notes.append("风向标命中：%s（%s）" % (c.get("name"), f.get("kind_label") or ""))
                 kept.append(c)
-            picks = _rg_int(gate.get("max_picks"))
-            if picks and len(kept) > picks:
-                for c in kept[picks:]:
+            # 【2026-11-26 修 P0-逃生阀】只数上限判据：`picks` 为 0 时是「本段不许开仓」
+            # （退潮段的空仓语义），**不是**「无限制」。旧写法 `if picks and ...` 遇 0 走
+            # falsy 分支 → 上限整体失效。同 10-21「炸板率恒 100%」的 `or` 陷阱，一并治。
+            # 逃生阀触发时闸门副本已带显式试探档只数（1），此处直接读副本即可。
+            _picks_eff = _rg_int(gate.get("max_picks"))
+            if _picks_eff is not None and len(kept) > _picks_eff:
+                for c in kept[_picks_eff:]:
                     drops.append({"name": c.get("name", ""), "symbol": c.get("symbol", ""),
                                   "reason": "复盘只数上限：「%s」段本时段最多 %d 只"
-                                            % (gate.get("stage"), picks)})
-                kept = kept[:picks]
+                                            % (gate.get("stage"), _picks_eff)})
+                kept = kept[:_picks_eff]
 
         # ---- 总仓位上限：可用额度 = cap% × 总权益 − 持仓市值 ----
         meta = {"applied": True, "notes": notes, "avail_cap": None}
@@ -5410,6 +5617,38 @@ def generate_report(stage):
         )
     )
 
+    # ===== ADR-0051 多策略路由（2026-11-17）：冰点从「一刀切空仓」改为「切换防守赛道」=====
+    # 用户诉求：大盘不好就改策略防守、大盘好就激进打板，策略要多、按大盘混合用。
+    # 实测根因：候选池冰点天仍有 40+ 只票(底部放量/情报/龙头资金)，却被上面的
+    #   risk_gate_triggered 全部清空 → 连月零派单。本路由只放行「真·系统性风险」全面空仓，
+    #   普通冰点切防守/反转赛道(低位+权重+催化)，高温维持原打板逻辑不变。
+    # fail-open：任一异常 → _route=None → 下游完全走原有逻辑，绝不阻断主流程。
+    _route = None
+    try:
+        import strategy_router as _sr
+        _rise = xgb.get('rise_count') if isinstance(xgb, dict) else None
+        _fall = xgb.get('fall_count') if isinstance(xgb, dict) else None
+        _route = _sr.judge_mode(
+            temp=xgb.get('temperature') if isinstance(xgb, dict) else None,
+            cy_pct=cy_pct, sh_pct=sh_pct, sz_pct=sz_pct,
+            up=_rise, down=_fall,
+            broken_ratio=xgb.get('broken_ratio') if isinstance(xgb, dict) else None,
+            limit_down=xgb.get('limit_down') if isinstance(xgb, dict) else None,
+        )
+        print("[strategy_router] %s | %s | 放行来源=%s | 仓位≤%.0f%% | %d只"
+              % (_route['label'], _route['reason'],
+                 '/'.join(sorted(_route['sources'])), _route['max_pos'] * 100,
+                 _route['max_picks']))
+    except Exception as _e:
+        print("[strategy_router] 路由异常(降级走原逻辑): %s: %s" % (type(_e).__name__, _e))
+        _route = None
+    # 每次生成报告先重置仓位覆盖，再按「普通冰点换赛道」条件置位（防跨时段残留）
+    global _STRATEGY_POS_OVERRIDE
+    _STRATEGY_POS_OVERRIDE = None
+    if (_route and risk_gate_triggered and _route.get('gate_open') is not False
+            and _route.get('mode') in ("DEFENSE", "REVERSAL", "TREND")):
+        _STRATEGY_POS_OVERRIDE = _route.get('max_pos')
+
     # ===== 统一操作池：汇总共线所有模块候选，排序取 Top N 作为买入候选(闭环) =====
     _intel_cands = get_intel_candidates()
     _bottom_rows = scan_bottom_surge(stage=stage)   # ADR-0033：底部放量通道（非接入时段返回 []）
@@ -5417,16 +5656,19 @@ def generate_report(stage):
     _rv_rows   = load_review_focus_rows(stage)
     _self_rows = load_self_watchlist_rows() if stage in ("13:40", "14:40") else []
     _ta_rows   = fetch_theme_arb_rows(stage)
-    if _rv_rows or _self_rows or _ta_rows:
-        print("[adr0041] 新供票源：复盘重点 %d 只 %s｜自选 %d 只｜题材套利 %d 只"
+    _bp_rows   = fetch_battle_plan_rows(stage)   # ADR-0052：盘后作战（fail-open）
+    if _rv_rows or _self_rows or _ta_rows or _bp_rows:
+        print("[adr0041/0042] 供票源：复盘重点 %d 只 %s｜自选 %d 只｜题材套利 %d 只｜盘后作战 %d 只 %s"
               % (len(_rv_rows), [x.get("name") for x in _rv_rows],
-                 len(_self_rows), len(_ta_rows)))
+                 len(_self_rows), len(_ta_rows),
+                 len(_bp_rows), [x.get("name") for x in _bp_rows]))
     _contribs = _gather_pool_contributions(
         xgb, first_board_candidates, pool,
         plate_limit_up_stocks, plate_all_active_stocks,
         sorted_reasons, hot_themes, _intel_cands,
         bottom_surge_rows=_bottom_rows,
-        review_focus_rows=_rv_rows, self_rows=_self_rows, theme_arb_rows=_ta_rows)
+        review_focus_rows=_rv_rows, self_rows=_self_rows, theme_arb_rows=_ta_rows,
+        battle_plan_rows=_bp_rows)
     _op_pool = build_operation_pool(_contribs, load_operation_pool(), today_str)
     _mt0 = xgb.get('temperature', 50) if isinstance(xgb, dict) else 50
     # 【2026-10-21】传入集合竞价参考（13:40/14:40 买入侧打分加权用；无参考则 0，排序不变）
@@ -5443,9 +5685,43 @@ def generate_report(stage):
     # 风险闸门一致性：闸门触发时强制清空买入候选，使模块七(尾盘推荐)、模块九(统一操作池)、
     # 弹窗待确认买单、订单计划四者一致地"不开新仓"。
     # 否则闸门只挡住模块七的文案，却挡不住模块九列候选 + 弹窗真实下单，造成自相矛盾。
+    #
+    # ADR-0051（2026-11-17）：引入多策略路由后，风险闸门分两种处理——
+    #   ① 真·系统性风险(route.gate_open=False，如创业板-4%/跌停30家) → 维持原样全清空；
+    #   ② 普通冰点/退潮(route 放行但 risk_gate_triggered=True) → 不再全砍，
+    #      按路由白名单只保留防守型来源(底部放量/情报/自选/复盘重点)，换赛道低吸。
+    # 这样下游四个消费方仍然共用同一份 _buy_candidates，一致性不被破坏。
     if risk_gate_triggered:
-        _ranked_buys = []
-        _buy_candidates = []
+        _sys_risk = bool(_route and _route.get('gate_open') is False)
+        if _sys_risk:
+            _ranked_buys = []
+            _buy_candidates = []
+            print("[strategy_router] 真·系统性风险：维持全清空，不开新仓")
+        elif _route and _route.get('mode') in ("DEFENSE", "REVERSAL", "TREND"):
+            _kept = []
+            for c in (_buy_candidates or []):
+                _srcs = c.get('sources')
+                if not _srcs:
+                    _srcs = [c.get('source')] if c.get('source') else []
+                # 归一化：rank_operation_pool 输出可能带 sources_why，但 sources 一定是 list
+                try:
+                    import strategy_router as _sr
+                    _ok = _sr.allow_source(_route, _srcs)
+                except Exception:
+                    _ok = False
+                if _ok:
+                    _kept.append(c)
+            _max_picks = int(_route.get('max_picks') or 1)
+            _n_before = len(_buy_candidates or [])
+            _ranked_buys = _kept[:_max_picks]
+            _buy_candidates = _kept[:_max_picks]
+            print("[strategy_router] %s 换赛道：原候选 %d → 防守保留 %d 只: %s"
+                  % (_route['label'], _n_before,
+                     len(_kept), [x.get('name') for x in _ranked_buys]))
+        else:
+            # _route 为 None(路由异常降级) 或打板模式 → 保持原有全清空语义
+            _ranked_buys = []
+            _buy_candidates = []
 
     # ===== ADR-0040：复盘闸门（把 T 日复盘结论落到 T+1 的买入候选上）=====
     # 挂载点选在这里的原因：与上方「系统性风险闸门」同一处「候选定稿点」——
@@ -5532,6 +5808,15 @@ def generate_report(stage):
     # ==== 盘面定性（2026-09-28 重构为纯函数 classify_market_phase，补广度权重，ADR-0035）====
     emotion, advice_pos, advice_atk, advice_def, _breadth_ratio = classify_market_phase(
         xgb, cy_pct, sh_pct, sz_pct, max_lb)
+
+    # 【2026-11-26 修 P0-报告闸门不同源】闸门生效时，报告仓位改用闸门口径
+    # （与真正约束派单的那一套同源，ADR-0049）。见 _gate_position_text 详注。
+    # 实时分档 emotion 仍保留（它是市场结构描述，不是仓位指令），但仓位文案以闸门为准。
+    advice_pos_real = advice_pos
+    _gate_pos_text, _gate_pos_note = _gate_position_text(advice_pos)
+    if _gate_pos_note:
+        advice_pos = _gate_pos_text
+        print("[gate_pos] 报告仓位口径改用闸门：%s（原实时分档：%s）" % (_gate_pos_text, advice_pos_real))
 
     # 提取今日各板块首个涨停板(即板块龙头)用于状态存档
     top_leaders = []
@@ -5814,16 +6099,44 @@ def generate_report(stage):
         elif not _buy_candidates:
             lines.append("  • 当前时段无符合短线高做多概率筛选标准的个股，建议空仓或锁仓观望。")
         else:
-            # 基于当前大盘建议的仓位 advice_pos 动态调整单股分配仓位
-            pos_per_stock = "5%-10% (轻仓试错)"
-            if "70%" in advice_pos or "80%" in advice_pos:
-                pos_per_stock = "20%-25% (重兵突击)"
-            elif "50%" in advice_pos:
-                pos_per_stock = "15%-20% (适度建仓)"
-            elif "20%" in advice_pos or "30%" in advice_pos:
-                pos_per_stock = "10% (轻仓博弈)"
-            elif "0%" in advice_pos:
-                pos_per_stock = "绝对空仓 (建议观望)"
+            # 【2026-11-26 修 P0-报告闸门不同源】单股仓位建议也必须与闸门同源。
+            # 旧实现用字符串包含判断（"70%" in advice_pos …），有两个问题：
+            #   ① 闸门生效后 advice_pos 已是「10%（复盘闸门 退潮段上限）」这类新文案，
+            #      字符串匹配会误判（"10%" 里含 "0%" → 落到「绝对空仓」分支）；
+            #   ② 原分档文案本身也有歧义（"0%-20%" 与 "20%" 互相包含）。
+            # 现在改为：闸门生效 → 直接用闸门的单票上限（single_pos_cap_pct）与只数；
+            #           无闸门 → 按实时分档的**数值**（而非字符串）分档。
+            _g_single = _rg_float((_ACTIVE_REVIEW_GATE or {}).get("single_pos_cap_pct"))
+            _g_picks = _rg_int((_ACTIVE_REVIEW_GATE or {}).get("max_picks"))
+            _g_hard = bool((_ACTIVE_REVIEW_GATE or {}).get("hard_block"))
+            if _ACTIVE_REVIEW_GATE and _g_hard:
+                pos_per_stock = "绝对空仓 (复盘闸门禁止开新仓)"
+            elif _ACTIVE_REVIEW_GATE and _g_single is not None:
+                if _g_single <= 0:
+                    pos_per_stock = "绝对空仓 (闸门单票上限 0%)"
+                else:
+                    pos_per_stock = "≤%g%%/只 (闸门单票上限)" % _g_single
+                    if _g_picks is not None:
+                        pos_per_stock += "，最多 %d 只" % _g_picks
+            else:
+                # 无闸门：按实时分档的数值上限分档（不用字符串包含判断）
+                _live_cap = None
+                try:
+                    _nums = [float(x) for x in re.findall(r"(\d+(?:\.\d+)?)\s*%", str(advice_pos or ""))]
+                    if _nums:
+                        _live_cap = max(_nums)
+                except Exception:
+                    _live_cap = None
+                pos_per_stock = "5%-10% (轻仓试错)"
+                if _live_cap is not None:
+                    if _live_cap >= 70:
+                        pos_per_stock = "20%-25% (重兵突击)"
+                    elif _live_cap >= 50:
+                        pos_per_stock = "15%-20% (适度建仓)"
+                    elif _live_cap >= 20:
+                        pos_per_stock = "10% (轻仓博弈)"
+                    elif _live_cap > 0:
+                        pos_per_stock = "5%%-10%% (轻仓试错)"
 
             lines.append(f"  • 建议单股配置仓位: {pos_per_stock} (大盘推荐总仓位: {advice_pos})")
             lines.append("")
@@ -5867,6 +6180,10 @@ def generate_report(stage):
 
     lines.append("\n  >>> [全新战术执行指令] <<<")
     lines.append(f"    1. 仓位控制: 建议保持在 {advice_pos}")
+    # 【2026-11-26 修 P0-报告闸门不同源】把闸门约束显式写出来，让「报告说的」
+    # 与「派单用的」是同一个数（ADR-0049），用户不必猜为什么实际仓位远低于建议。
+    if _gate_pos_note:
+        lines.append(f"       （{_gate_pos_note}）")
     lines.append(f"    2. 进攻方向: {advice_atk}")
     lines.append(f"    3. 防守警示: {advice_def}")
     if "14:40" in stage or "盘后复盘" in stage:
@@ -6204,7 +6521,7 @@ if __name__ == "__main__":
 
     send_email = args.send
 
-    # ==== 闸门 1：时段窗口守卫（2026-10-08 新增，ADR-0042）====
+    # ==== 闸门 1：时段窗口守卫（2026-10-08 新增，ADR-0052）====
     # 桌面端 automation 在 app 唤醒后会补跑错过的日程（如 09:10 跑 "11:40" 档），
     # 盘前空快照会被写成"当日报告"并覆盖跨日基准。不在窗口内直接退出：
     # 不生成报告、不写任何状态文件、不弹窗。

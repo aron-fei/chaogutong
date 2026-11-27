@@ -25,6 +25,7 @@ STATUS_LABEL = {
     "empty_pool": "候选池为空",
     "gate_quota": "闸门额度为 0",
     "no_plan": "未生成派单文件",
+    "stale_plan": "昨日残留文件",
     "other": "无买入候选",
 }
 
@@ -79,6 +80,24 @@ def diagnose(reports_dir=None):
                         "no_gate": False, "note": ""})
             stages.append(row)
             continue
+        # 【2026-11-19 修】order_plan_<时段>.json 文件名无日期、每天覆盖，
+        # 当日该时段尚未跑时磁盘上会是**昨天的残留**，过去直接当今日派单读，
+        # 于是面板谎报「已派单 1 只」而实际无 pending 单、无弹窗（用户实测困惑）。
+        # 用 generated_at 日期（兜底文件 mtime）严格校验，非今日一律标 stale_plan。
+        _gen = str(d.get("generated_at") or "")[:10]
+        if not _gen:
+            try:
+                _gen = datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d")
+            except Exception:
+                _gen = ""
+        if _gen != datetime.now().strftime("%Y-%m-%d"):
+            row.update({"status": "stale_plan", "label": STATUS_LABEL["stale_plan"],
+                        "reason": (f"order_plan 为昨日残留（generated_at={_gen or '未知'}），"
+                                   "今日该时段尚未运行，不算派单、不会弹确认框"),
+                        "temp": None, "buys": 0, "no_gate": False,
+                        "note": "", "generated_at": d.get("generated_at")})
+            stages.append(row)
+            continue
         buys = d.get("buy_candidates") or []
         acts = d.get("actions") or []
         note = " / ".join(str(a.get("note") or "")
@@ -113,6 +132,7 @@ def diagnose(reports_dir=None):
                 "max_picks": (d or {}).get("max_picks"),
                 "position_cap_pct": (d or {}).get("position_cap_pct")}
 
+    hints = []  # 2026-11-17 修复：原定义在下方 gate.append 之后，闸门失效时触发 UnboundLocalError
     gate = {"today": date_iso, "current": _gate_info(gate_cur),
             "main": _gate_info(gate_file),
             "usable_today": any(_gate_info(p).get("covers_today")
@@ -125,7 +145,6 @@ def diagnose(reports_dir=None):
             "常见原因是盘后生成的「明日闸门」覆盖了今日副本；"
             "这是额度诊断显示「无闸门」的原因，但不是零派单的主因。")
     dispatched = sum(1 for s in stages if s["status"] == "dispatched")
-    hints = []
     if dispatched == 0:
         blocked = sum(1 for s in stages if s["status"] == "gate_temp")
         empty = sum(1 for s in stages if s["status"] == "empty_pool")
@@ -178,6 +197,21 @@ if __name__ == "__main__":
         assert _classify({}, "", [{"code": "300001"}], 31, {})[0] == "dispatched"
         assert _classify({}, "午后无明确未涨停强势标的，不操作", [], 71, {})[0] == "empty_pool"
         assert _classify({}, "", [], 71, {"gate_max_picks": 0})[0] == "gate_quota"
+        print("[5] 昨日残留 order_plan 不得算今日派单（2026-11-19 修）")
+        import tempfile
+        from datetime import timedelta
+        _td = Path(tempfile.mkdtemp(prefix="ddiag_selftest_"))
+        _y = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d 09:27:00")
+        (_td / "order_plan_0925.json").write_text(json.dumps({
+            "generated_at": _y, "buy_candidates": [{"name": "昨日票", "code": "000001"}],
+            "actions": [], "market_temp": 35, "quota_diag": {}}), encoding="utf-8")
+        _st = diagnose(str(_td))
+        _r0925 = next(x for x in _st["stages"] if x["stage"] == "09:25")
+        assert _r0925["status"] == "stale_plan" and _r0925["buys"] == 0, _r0925
+        assert "昨日残留" in _r0925["reason"], _r0925["reason"]
+        print("   ✅ 昨日 generated_at 的 order_plan → stale_plan / buys=0（不再谎报派单）")
+        import shutil as _sh
+        _sh.rmtree(_td, ignore_errors=True)
         print("[selftest] PASS")
     else:
         print(json.dumps(diagnose(), ensure_ascii=False, indent=2))

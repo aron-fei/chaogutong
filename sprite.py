@@ -687,9 +687,12 @@ class SpriteEngine:
                 self._zt_prev = zt_codes
                 self._zt_ever |= zt_codes
                 self._pool_primed = True
+                # 【2026-11-17 修】用独立的 SPRITE_ZT_TOP（80），不再错用涨速榜的 TOP=12。
+                # 原实现把涨停池当涨速榜截断：37 只涨停只显示前 12 只，
+                # 好当家（首封 09:45、stat=4/3）因排序靠后被挤掉 —— 用户实测反馈。
                 self._boards["limit_up"] = sorted(
                     zt, key=lambda x: (-(x.get("lianban") or 0), str(x.get("first_time") or ""))
-                )[:config.SPRITE_SPEED_TOP]
+                )[:config.SPRITE_ZT_TOP]
                 self._stats["last_pool_at"] = datetime.now().strftime("%H:%M:%S")
         except Exception as e:
             self._err("feed_pools", e)

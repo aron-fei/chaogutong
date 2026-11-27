@@ -1,12 +1,16 @@
 # -*- coding: utf-8 -*-
-"""持仓模块：本地 JSON 存储 + 腾讯批量接口实时估值
+"""持仓模块：本地 JSON 存储 + 腾讯批量接口实时估值 + 只读操作建议参考层
 
 设计原则（对齐 market-advisor 铁律）：
   - 纯手动录入，不碰任何券商账号，只参谋不替人下单
   - 持仓数据只存本地 portfolio.json，永不上传
+  - 【ADR-0052】真实持仓给只读参考建议，但绝不写回测库/确认单/派单链路：
+    「给建议」与「进策略」是两件事，前者是输出层，后者被 ADR-0011/0032/0044 硬隔离
 """
 import json
 import threading
+import time
+import traceback
 from datetime import datetime
 from pathlib import Path
 
@@ -176,3 +180,131 @@ def valuation():
         "day_pnl": round(day_pnl, 2),
     }
     return {"positions": rows, "summary": summary, "quoted_at": now}
+
+
+# ---------------------------------------------------------------------------
+# 【ADR-0052】真实持仓 · 只读操作建议参考层
+# ---------------------------------------------------------------------------
+# 历史脉络：ADR-0009 曾按用户诉求做过真实持仓实时建议，ADR-0011 因「真实持仓乱入
+# 模拟盘账户/弹窗」把它整体回退。本层取中间路线：
+#   ✅ 给建议：复用 position_watch.decide_watch() 同一套已验证矩阵，真实持仓逐只评估
+#   ❌ 不进策略：不写 pending_*_confirm / backtest_database / order_plan，不触发弹窗
+# 这样既回应「昨天加的持仓今天没建议」的诉求，又不重蹈 ADR-0011 的污染事故。
+_ADVICE_TTL = 45           # 秒；与 10s 估值轮询解耦，避免每次都拉日K
+_ADVICE_CACHE = {"key": None, "ts": 0.0, "data": None}
+_ADVICE_LOCK = threading.Lock()
+
+
+def _mkt_temp_proxy():
+    """大盘温度代理：涨家数/(涨+跌)×100，取 market-monitor 已缓存快照，零额外请求。"""
+    try:
+        import data_fetcher
+        md = data_fetcher.MarketData()
+        b = md.snapshot().get("breadth") or {}
+        up, down = b.get("up"), b.get("down")
+        if not up and not down:
+            return None
+        return round(float(up) / float(up + down) * 100.0, 2)
+    except Exception as e:
+        print(f"[portfolio.advice] 大盘温度取数失败: {type(e).__name__}: {e}")
+        traceback.print_exc()
+        return None
+
+
+def _advice_for_one(code, name, cost, shares, pw, quotes, trend_cache, mkt_temp, lite):
+    """对单只真实持仓评估。lite=True 时只做快速口径（无日K/无大盘温度）。"""
+    q = quotes.get(code)
+    if not q:
+        return {"symbol": code, "name": name, "action": "HOLD",
+                "action_label": "数据缺失", "level": 3,
+                "reason": "无法获取实时行情，本轮不评估", "stale": True}
+    price = q["price"]
+    avg = q.get("avg_price")
+    hi, lo = q.get("high"), q.get("low")
+    day_pos = (price - lo) / (hi - lo) if hi is not None and lo is not None and hi > lo else None
+    tr = {} if lite else (trend_cache.get(code) or {})
+    pos60 = None
+    if tr.get("range_hi") and tr.get("range_lo") and tr["range_hi"] > tr["range_lo"]:
+        pos60 = (price - tr["range_lo"]) / (tr["range_hi"] - tr["range_lo"])
+    trend = "flat"
+    if tr.get("ma5") and tr.get("ma10"):
+        if price > tr["ma5"] > tr["ma10"]:
+            trend = "up"
+        elif price < tr["ma5"] < tr["ma10"]:
+            trend = "down"
+    pnl_pct = (price - cost) / cost * 100.0 if cost else None
+    action, reason = pw.instance().decide_watch({
+        "pct": q.get("pct"), "sp60": None, "sp180": None, "flow": None,
+        "price": price, "avg": avg, "day_pos": day_pos,
+        "pnl_pct": pnl_pct, "trend": trend, "pos60": pos60,
+        "mkt_temp": mkt_temp,
+    })
+    meta = pw.ACTION_META.get(action, {})
+    return {
+        "symbol": code, "name": name, "action": action,
+        "action_label": meta.get("label", action), "level": meta.get("level", 3),
+        "cls": meta.get("cls", ""), "reason": reason, "stale": False,
+        "price": price, "pct": q.get("pct"), "pnl_pct": round(pnl_pct, 2) if pnl_pct is not None else None,
+        "day_pos": round(day_pos, 3) if day_pos is not None else None,
+        "pos60": round(pos60, 3) if pos60 is not None else None,
+        "trend": trend, "ma5": tr.get("ma5"), "ma10": tr.get("ma10"), "ma20": tr.get("ma20"),
+        "vol_ratio": q.get("vol_ratio"), "turnover": q.get("turnover"),
+        "note": "只读参考建议 · 不自动执行 · 不进模拟盘账户",
+    }
+
+
+def advise(positions=None, lite=False, force=False):
+    """真实持仓逐只操作建议（只读参考，绝不产生任何副作用）。
+
+    Args:
+      positions: 可选，已加载的持仓列表；缺省从 portfolio.json 读
+      lite: True 跳过日K/大盘温度（快速口径，适合非交易时段 / 弱网降级）
+      force: True 忽略 TTL 缓存
+
+    Returns:
+      {code: advice_row}；空持仓返回 {}
+    """
+    positions = list_positions() if positions is None else list(positions or [])
+    if not positions:
+        return {}
+    key = tuple((str(p.get("code")), p.get("cost"), p.get("shares")) for p in positions)
+    now = time.time()
+    if not force:
+        with _ADVICE_LOCK:
+            hit = _ADVICE_CACHE
+            if hit["key"] == key and hit["data"] is not None and now - hit["ts"] < _ADVICE_TTL:
+                return hit["data"]
+    try:
+        import position_watch as pw
+        codes = [str(p.get("code")) for p in positions if p.get("code")]
+        quotes = pw.fetch_quotes(codes)
+        trend_cache = pw.TrendCache(ttl=int(_cfg_pw("PW_TREND_TTL", 300))) if not lite else None
+        mkt_temp = None if lite else _mkt_temp_proxy()
+        out = {}
+        for p in positions:
+            code = str(p.get("code") or "")
+            if not code:
+                continue
+            out[code] = _advice_for_one(
+                code, p.get("name") or code, float(p.get("cost") or 0),
+                float(p.get("shares") or 0), pw, quotes, trend_cache, mkt_temp, lite)
+        with _ADVICE_LOCK:
+            _ADVICE_CACHE.update({"key": key, "ts": now, "data": out})
+        return out
+    except Exception as e:
+        print(f"[portfolio.advice] 评估失败: {type(e).__name__}: {e}")
+        traceback.print_exc()
+        return {}
+
+
+def _cfg_pw(name, default):
+    try:
+        import config
+        v = getattr(config, name, None)
+        return default if v is None else v
+    except Exception:
+        return default
+
+
+if __name__ == "__main__":
+    print(json.dumps(advise(force=True), ensure_ascii=False, indent=2))

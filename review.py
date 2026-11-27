@@ -282,8 +282,11 @@ def daily_review(md, adv):
                 for s in by_inflow[-5:] if (s.get("net_inflow") or 0) < 0]
 
     # 涨停行业分布 → 支线方向
+    # 【2026-11-26 修 P0-口径】必须用 zt_pool_all（全量）——上面 zt_n 用的是
+    # zt_count（全量 65），若这里用截断版 zt_pool（60），同一函数里
+    # 「涨停家数」与「行业分布家数」对不上（11-26 实测 65 vs 60）。
     ind_zt = {}
-    for s in (snap.get("zt_pool") or []):
+    for s in (snap.get("zt_pool_all") or snap.get("zt_pool") or []):
         ind_zt[s.get("industry", "")] = ind_zt.get(s.get("industry", ""), 0) + 1
     ind_rank = sorted(ind_zt.items(), key=lambda x: -x[1])[:6]
 
