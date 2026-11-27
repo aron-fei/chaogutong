@@ -24,7 +24,7 @@
 set -u
 
 BUNDLE="${1:-}"
-REPO_DIR="${MARKET_MONITOR_DIR:-${0:A:h}/../..}"
+REPO_DIR="${MARKET_MONITOR_DIR:-${0:A:h}/..}"
 REPO_DIR="${REPO_DIR:A}"
 # 2026-11-27 重构：报表目录在仓库根内（单根架构）
 REPORT_DIR="${REPORTS_DIR:-$REPO_DIR/reports}"
