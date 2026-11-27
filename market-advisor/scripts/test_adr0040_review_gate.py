@@ -4,7 +4,7 @@
 
 回答的问题：**「操作台弹出的推票逻辑」与「复盘」是否真的形成数据闭环？**
 
-逐跳验证（用 10-08 真实 trade_gate.json 跑完整链路）：
+逐跳验证（用**合成闸门**跑完整链路，闸门内容完全可控 → 结果可复现）：
   第1跳 复盘闸门 → 买入候选      (_apply_review_gate)
   第2跳 候选 → 待确认买入单      (get_buy_intents → write_pending_buy_confirm)
   第3跳 候选 → 弹窗闪卡          (build_ops_flashcard)
@@ -15,6 +15,18 @@
 双情景（关键：账户状态会改变闸门结果）
   A 真实账户（持仓 47.8% > 分歧段上限 40%）→ **全部剔除、禁止加仓**并给出缺口
   B 已减仓账户（持仓 ≤40%）              → 高度/只数闸门剔除 3 只、放行 2 只
+
+【2026-11-26 修 · 断链 11 处的根因】本测试此前**读真实 trade_gate.json**做输入，
+于是结果随「当日闸门内容」漂移：
+  · 候选的「命中重点池」断言要求重点池含 蓝丰生化 / 泰诺麦博-U —— 真实重点池每天
+    换股票（11-26 是 克来机电/顺灏股份/好当家…）→ 断言恒假；
+  · 「剔除 3 只 / 放行 2 只」写死了分歧段 max_picks=2 —— 该值 10-21 已改为 3
+    → 真实闸门下变成剔除 2 只 / 放行 3 只；
+  · 「闪卡含未执行卖出提醒」要求真实闸门带 pending_sell —— 实际常为空；
+  · 情景 A 用 `db.get("available_cash", 257672.88)` 造 47.8% 仓位 —— 那是 10-06
+    的账户快照；如今 available_cash == total_equity（空仓）→ 持仓算成 0% →
+    「禁止加仓」根本不触发（夹具陈旧，非调度器 bug：held = equity − cash 逻辑正确）。
+→ 现在改为**合成闸门 + 显式构造仓位**，断言与实现解耦，可复现。
 
 隔离：全部读写都在临时目录，不触碰真实 reports/。
 仅 monkeypatch 四处：闸门新鲜度校验（asof 判定已由 test_review_gate 单独覆盖）、行情取数、
@@ -41,15 +53,50 @@ def ck(cond, msg):
         FAILS.append(msg)
 
 
+# 【2026-11-26 修】合成闸门：内容完全可控 → 断言可复现，不受「当日真实闸门」漂移影响。
+# 形状对齐 10-08 真实闸门（分歧段 / cap 40 / 单票 13 / picks 2 / 不碰 3 板以上），
+# 并故意带上 冷却名单 + 未执行卖出 + 2 只重点池，覆盖闪卡与打标分支。
+SYNTH_GATE = {
+    "version": 2, "mode": "enforce", "asof": "2099-01-02", "stage": "分歧",
+    "stage_icon": "💥", "reason": "💥 分歧段：高标独舞，接力资金断档。",
+    "position_cap_pct": 40, "single_pos_cap_pct": 13, "max_picks": 2,
+    "max_board_days": 3, "deny_styles": ["高位连板"],
+    "hard_block": False, "hard_block_reason": "",
+    "cooling": [{"name": "中国长城", "symbol": "000066.SZ", "until": "2099-01-03",
+                 "reason": "追高度（买在当日最高点）"}],
+    "pending_sell": [{"name": "光启科技", "symbol": "002625.SZ", "action": "SELL_ALL",
+                      "price": 38.5, "held_lots": 100, "recommend_sell_lots": 100,
+                      "text": "光启科技 SELL_ALL 卖出建议未执行（现价 38.5）"}],
+    "focus": [
+        {"name": "蓝丰生化", "symbol": "002513.SZ", "code": "002513", "kind": "relay",
+         "kind_label": "换手接力", "one_word": False, "board_days": 1, "pct": 10.0},
+        {"name": "泰诺麦博-U", "symbol": "688806.SH", "code": "688806", "kind": "lowstart",
+         "kind_label": "低位首板", "one_word": False, "board_days": 1, "pct": 10.0},
+    ],
+    "stage_signals": {"zt": 60, "dt": 10, "max_board": 4, "ratio": 0.6, "zb_rate": 28.0,
+                      "gap": 1},
+    "loss_level": 2, "avoid": [], "checklist": [],
+}
+
+
 def setup():
-    """建临时工作目录 + 拷回测库副本 + 读真实闸门。绝不触碰真实 reports/。"""
+    """建临时工作目录 + 拷回测库副本 + **合成闸门**。绝不触碰真实 reports/。"""
     tmp = tempfile.mkdtemp(prefix="gate_loop_")
     real = ms.REPORTS_DIR
     shutil.copy(os.path.join(real, "backtest_database.json"),
                 os.path.join(tmp, "backtest_database.json"))
     db = json.load(open(os.path.join(tmp, "backtest_database.json"), encoding="utf-8"))
+    gate = json.loads(json.dumps(SYNTH_GATE))   # 深拷贝，避免被 monkeypatch 改写
+    # 真实闸门只做只读巡检（形态打印，不参与断言 → 不再随当日内容漂移）
     gp = os.path.join(real, "trade_gate.json")
-    gate = json.load(open(gp, encoding="utf-8")) if os.path.exists(gp) else None
+    try:
+        live = json.load(open(gp, encoding="utf-8"))
+        print("真实闸门（只读巡检）: %s段 cap=%s%% picks=%s maxbd=%s 重点池=%d pending_sell=%d"
+              % (live.get("stage"), live.get("position_cap_pct"), live.get("max_picks"),
+                 live.get("max_board_days"), len(live.get("focus") or []),
+                 len(live.get("pending_sell") or [])))
+    except Exception as e:
+        print("真实闸门读取失败（不影响合成闸门测试）: %s" % e)
     return tmp, db, gate
 
 
@@ -119,14 +166,18 @@ def main():
         print("⚠️ 未找到 trade_gate.json —— 请先在交易日盘后运行复盘模式生成闸门")
         print("   （本测试需要真实闸门文件；缺失时仅验证 fail-open 分支）")
 
-    print("闸门文件: %s段 cap=%s%% 不碰%d板 max_picks=%d 重点池=%d 未执行卖出=%d"
+    print("合成闸门: %s段 cap=%s%% 不碰%d板 max_picks=%d 重点池=%d 未执行卖出=%d"
           % ((gate or {}).get("stage"), (gate or {}).get("position_cap_pct"),
              (gate or {}).get("max_board_days"), (gate or {}).get("max_picks"),
              len((gate or {}).get("focus") or []), len((gate or {}).get("pending_sell") or [])))
 
     # ---------------- 情景 A：真实账户状态（持仓 47.8% > 40%）----------------
     print("\n【情景A · 真实账户】持仓 47.8%% > 分歧段上限 40%% → 应全拦")
-    set_cash(tmp, db, db.get("available_cash", 257672.88))
+    # 【2026-11-26 修】显式构造 47.8% 仓位：调度器按 held = equity − cash 算持仓。
+    # 旧写法用 `db.get("available_cash", 257672.88)`（10-06 的账户快照）——如今账户空仓、
+    # available_cash == total_equity → 持仓算成 0% → 「禁止加仓」根本不触发（夹具陈旧）。
+    eq0 = float(db.get("total_equity") or 500000.0)
+    set_cash(tmp, db, eq0 * (1 - 0.478))
     reset_globals()
     a_kept = ms._apply_review_gate("13:40", CANDS, XGB, ms.load_backtest_db())
     meta = ms._REVIEW_GATE_META

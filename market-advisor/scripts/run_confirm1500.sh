@@ -14,9 +14,13 @@
 # ---------------------------------------------------------------------------
 
 set -u
-PY=/opt/homebrew/anaconda3/bin/python3
-SCRIPT_DIR=/Users/williamli/.workbuddy/skills/market-advisor/scripts
-REPORT_DIR=/Users/williamli/Work/reports
+PY="${MARKET_PY:-/opt/homebrew/anaconda3/bin/python3}"
+SCRIPT_DIR="${SCRIPT_DIR:-${0:A:h}}"
+# 2026-11-27 重构：报表默认目录 = 仓库根/reports（单根架构）；旧机 ~/Work/reports 为软链兼容
+MONITOR_DIR="${MARKET_MONITOR_DIR:-$HOME/Work/market-monitor}"
+REPORT_DIR="${REPORTS_DIR:-$MONITOR_DIR/reports}"
+export MARKET_MONITOR_DIR="$MONITOR_DIR"
+export REPORTS_DIR="$REPORT_DIR"
 LOG="$REPORT_DIR/confirm1500_runner.log"
 
 # UTF-8 输出环境（launchd 下 locale 可能为 C，脚本大量 print 中文）

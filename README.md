@@ -167,6 +167,11 @@ v1 的「+3~4% 早段异动」已彻底移除（实盘反馈：推过 4 次，�
 
 ## 4. 目录与关键文件
 
+> **完整项目地图（模块职责表 / launchd 拓扑 / 排障速查）见 [ARCHITECTURE.md](ARCHITECTURE.md)。**
+> 2026-11-27 单根重构：报表并入仓库 `reports/`、market-advisor 代码在
+> `market-advisor/scripts/`、`~/.workbuddy/skills/market-advisor` 是软链、
+> 根目录 .bak 全部归档 `.archive/`。
+
 ```
 app.py                 Flask 入口、路由、门禁、dashboard 聚合、慢接口 TTL 缓存
 config.py              全部阈值与映射（SPRITE_FB_* / ZT_THEME_* / ZT_INDUSTRY_TO_TENCENT_BOARD）
@@ -180,12 +185,15 @@ gjd_etf.py             GJD 宽基 ETF 资金面（放量倍数 / 主动净买入
 log_util.py            降噪告警（同一异常 60s 内只打一次）
 templates/workbench.html  唯一主模板（内联 CSS + JS，约 5.3k 行）
 tests/                 回归测试集（smoke / zt_strength / gjd_etf 等，共 70 项）
-scripts/               日志轮转、缓存清理、闸门修复验证脚本
+scripts/               日志轮转、缓存清理、闸门修复验证、跨机迁移
+market-advisor/scripts/  调度链（market_scheduler.py + run_*.sh + test_adr*.py）
 docs/                  体检报告、验证截图、设计文档
+reports/               全部时段报告/闸门/账户（gitignored 运行时状态，旧 ~/Work/reports 软链兼容）
 ```
 
-运行时数据全部在 `data/`，**密钥与真实持仓不入库**（见 `.gitignore`）。
-改代码前的本地备份命名为 `*.bak_<日期>_<原因>`，由全局 `~/.gitignore_global` 统一忽略，不进 git。
+运行时数据在 `data/` 与 `reports/`，**密钥与真实持仓不入库**（见 `.gitignore`）。
+历史 `.bak_<日期>_<原因>` 备份已归档至 `.archive/`（全局忽略、不进 git）。
+
 
 ## 5. 验证（交付前必跑）
 
@@ -217,39 +225,41 @@ bash scripts/rotate_logs.sh                 # DRY_RUN，确认后才加 --apply
 
 ## 7. 跨机部署 / 迁移指南
 
-本仓库**只含代码**。要让另一台 macOS「和这台一样」，必须把下面三类**仓库外资产**一起搬过去——它们被 `.gitignore` 排除，不进版本库。
+本仓库只含代码；**报表/密钥/运行时状态都在仓库内目录但被 gitignore**（`reports/`、`data/`、`market-advisor/scripts/` 密钥）。要让另一台 macOS「和这台一样」，把这些资产随迁移包搬过去。
 
-**一键迁移（2026-11-27 新增）**：旧机 `scripts/migrate_export.sh` 打包（报告目录 + data 运行时状态 + LaunchAgents + workbuddy 运行副本 + 推送密钥，~10M，自动剔除可重建缓存）→ AirDrop/scp 传到新机 → 新机 clone 仓库后 `scripts/migrate_import.sh <bundle.tar.gz>`（自动改写用户名不同的 plist 路径、launchctl bootstrap、跑三套 selftest）。手动步骤见 7.1 / 7.2。
+**一键迁移（2026-11-27 单根架构版）**：旧机 `scripts/migrate_export.sh` 打包（reports/ + data/ 运行时状态 + market-advisor 运行密钥 + LaunchAgents + 推送密钥，自动剔除可重建缓存）→ AirDrop/scp 传到新机 → 新机 clone 仓库后 `scripts/migrate_import.sh <bundle.tar.gz>`（自动恢复到仓库内对应目录、改写用户名不同的 plist 路径、创建 workbuddy 软链、launchctl bootstrap、跑三套 selftest）。手动步骤见 7.1 / 7.2。
 
 ### 7.1 必须单独转移的资产（不要指望 git clone）
 
-| 资产 | 本机位置 | 说明 |
+| 资产 | 位置（2026-11-27 起） | 说明 |
 | --- | --- | --- |
 | 运行时数据 / 配置 | `market-monitor/data/` | watchlist.json、us_a_map.json、fut_sector_map.json、gjd_etf_base.json、各类缓存。**其中 `access_key.json`、`portfolio.json` 是密钥** |
-| 全部时段报告 | `~/Work/reports/` | 460+ 个 `pro_report_*`、slot_status.json、各类状态文件——工作台只读展示的就是这里 |
-| 推送 / 券商密钥 | `market-advisor/pushplus_token.txt`、`broker_config.json` | 不入库；PushPlus token 也可走环境变量 `PUSHPLUS_TOKEN` |
-| 常驻调度 | `~/Library/LaunchAgents/com.marketmonitor.flask.plist` + `com.marketadvisor.slot*.plist` | 见 7.3 参数化 |
+| 全部时段报告 | `market-monitor/reports/`（旧机 `~/Work/reports` 为软链） | 460+ 个 `pro_report_*`、trade_gate.json、backtest_database.json、slot_status.json——工作台只读展示的就是这里 |
+| 推送 / 券商密钥 | `market-advisor/scripts/pushplus_token.txt`、`broker_config.json` | 不入库；PushPlus token 也可走环境变量 `PUSHPLUS_TOKEN` |
+| 常驻调度 | `~/Library/LaunchAgents/com.marketmonitor.flask.plist` + `com.marketadvisor.*.plist` | 见 7.3 参数化 |
 
-> 代码 + 上述资产 = 这台电脑的完整状态。只 clone 仓库跑不起来（缺数据、缺密钥、路径写死）。
+> 代码 + 上述资产 = 这台电脑的完整状态。只 clone 仓库跑不起来（缺数据、缺密钥）。
 
 ### 7.2 新机部署步骤（macOS）
 
 1. **装 Python 环境**：推荐 anaconda（自带 akshare / pandas）；否则 `brew install python` 后 `pip install -r requirements.lock.txt`。
 2. **克隆**：`git clone <你的私有远程> ~/Work/market-monitor`；`cd ~/Work/market-monitor`。
-3. **恢复报告目录**：把本机 `~/Work/reports/` 整个拷到新机同名路径；或在新机设 `REPORTS_DIR=/新路径`（launchd 下须在 plist 的 `EnvironmentVariables` 里设）。
-4. **恢复数据 / 密钥**：把本机 `market-monitor/data/` 拷到新机；把 `pushplus_token.txt`、`broker_config.json` 拷到新机 `market-monitor/market-advisor/`。
-5. **装依赖**：`pip install -r requirements.lock.txt` 与 `pip install -r market-advisor/requirements.txt`。
-6. **设环境变量**（新机路径 / 用户名不同时必做，写在 plist 或 `~/.zshrc`）：
-   - `REPORTS_DIR` —— 报告目录（默认 `~/Work/reports`）
+3. **一键导入**（推荐）：`scripts/migrate_import.sh <bundle.tar.gz>` 完成下面 4-6 步并自检。以下为手动等效步骤。
+4. **恢复报告目录**：把旧机 `market-monitor/reports/` 整个拷到新机仓库内同路径（REPORTS_DIR 默认即仓库根/reports，无需设变量；如要外置再设 `REPORTS_DIR`）。
+5. **恢复数据 / 密钥**：把旧机 `market-monitor/data/` 拷到新机；把 `pushplus_token.txt`、`broker_config.json` 拷到新机 `market-advisor/scripts/`。
+6. **建 workbuddy 软链**：`mkdir -p ~/.workbuddy/skills && ln -s ~/Work/market-monitor/market-advisor ~/.workbuddy/skills/market-advisor`（launchd plist 指向这里）。
+7. **装依赖**：`pip install -r requirements.lock.txt` 与 `pip install -r market-advisor/scripts/requirements.txt`。
+8. **设环境变量**（新机路径 / 用户名不同时必做，写在 plist 或 `~/.zshrc`）：
+   - `REPORTS_DIR` —— 报告目录（默认 = 仓库根/reports）
    - `MARKET_MONITOR_DIR` —— 仓库根（默认 `/Users/williamli/Work/market-monitor`，新机改成本机仓库根）
-   - `PUSHPLUS_TOKEN` 或放 `market-advisor/pushplus_token.txt`
+   - `PUSHPLUS_TOKEN` 或放 `market-advisor/scripts/pushplus_token.txt`
    - `WORKBENCH_KEY` —— 工作台访问密钥（覆盖 `data/access_key.json`）
-7. **启动工作台**：见 7.3 加载 flask plist 后 `curl -s http://127.0.0.1:8765/api/health`。
-8. **启用定时报告**：加载 `com.marketadvisor.slot*.plist`（改路径），或手动 `bash market-advisor/run_slot.sh 09:25`。
+9. **启动工作台**：见 7.3 加载 flask plist 后 `curl -s http://127.0.0.1:8765/api/health`。
+10. **启用定时报告**：加载 `com.marketadvisor.*.plist`（改路径），或手动 `bash market-advisor/scripts/run_slot.sh 09:25`。
 
 ### 7.3 launchd plist（路径参数化模板）
 
-把 `YOUR_HOME` 换成新机 `$HOME`、脚本指向 `market-advisor/run_slot.sh`。示例（09:25 段，其余时段改 `Minute` / `Label` 即可）：
+把 `YOUR_HOME` 换成新机 `$HOME`、脚本指向 `market-advisor/scripts/run_slot.sh`（2026-11-27 起多一层 `scripts/`）。示例（09:25 段，其余时段改 `Minute` / `Label` 即可）：
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -259,14 +269,14 @@ bash scripts/rotate_logs.sh                 # DRY_RUN，确认后才加 --apply
     <key>ProgramArguments</key>
     <array>
         <string>/bin/zsh</string>
-        <string>YOUR_HOME/Work/market-monitor/market-advisor/run_slot.sh</string>
+        <string>YOUR_HOME/Work/market-monitor/market-advisor/scripts/run_slot.sh</string>
         <string>09:25</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>YOUR_HOME/Work/market-monitor/market-advisor</string>
+    <string>YOUR_HOME/Work/market-monitor/market-advisor/scripts</string>
     <key>EnvironmentVariables</key>
     <dict>
-        <key>REPORTS_DIR</key><string>YOUR_HOME/Work/reports</string>
+        <key>REPORTS_DIR</key><string>YOUR_HOME/Work/market-monitor/reports</string>
         <key>MARKET_MONITOR_DIR</key><string>YOUR_HOME/Work/market-monitor</string>
     </dict>
     <key>StartCalendarInterval</key>
@@ -286,7 +296,7 @@ flask plist 同理：把 `ProgramArguments` 里的 `app.py` 路径与 `WorkingDi
 ### 7.4 一致性校验
 
 ```bash
-bash market-advisor/run_slot.sh --selftest     # 依赖 / 路径零副作用自检
+bash market-advisor/scripts/run_slot.sh --selftest     # 依赖 / 路径零副作用自检
 PY=/opt/homebrew/anaconda3/bin/python3
 $PY -m unittest discover -s tests -v           # market-monitor 70 项回归
 ```

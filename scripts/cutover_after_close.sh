@@ -79,8 +79,9 @@ for f in data/access_key.json data/suggestion_state.json data/watchlist.json por
     exit 1
   fi
 done
-for f in /Users/williamli/Work/reports/slot_status.json \
-         /Users/williamli/Work/reports/backtest_database.json; do
+REPORT_DIR="${REPORTS_DIR:-/Users/williamli/Work/market-monitor/reports}"
+for f in "$REPORT_DIR/slot_status.json" \
+         "$REPORT_DIR/backtest_database.json"; do
   [ -f "$f" ] && echo "OK 跨项目红线保留 $f" || echo "[warn] 跨项目文件不存在（可能本就未生成）: $f"
 done
 

@@ -1,22 +1,22 @@
 {
   "ok": true,
-  "asof": "2026-11-26 11:00:31",
+  "asof": "2026-11-27 15:52:17",
   "lookback": 240,
-  "universe": 5083,
-  "elapsed": 15.3,
+  "universe": 5086,
+  "elapsed": 16.5,
   "stats": {
-    "count": 4,
-    "success_rate": 50.0,
-    "avg_ret": 1.0,
-    "profit_factor": 2.47,
-    "avg_win": 3.35,
+    "count": 5,
+    "success_rate": 60.0,
+    "avg_ret": 2.18,
+    "profit_factor": 3.34,
+    "avg_win": 4.55,
     "avg_loss": -1.36,
-    "max_ret": 6.31,
+    "max_ret": 6.93,
     "min_ret": -1.81,
-    "wins": 2,
+    "wins": 3,
     "losses": 2
   },
-  "signal_count": 4,
+  "signal_count": 5,
   "signals": [
     {
       "code": "002535",
@@ -68,6 +68,23 @@
       "bottom_score": 71.5,
       "bottom_vr": 2.5,
       "signal_close": 1.65
+    },
+    {
+      "code": "600785",
+      "name": "新华百货",
+      "signal_date": "2026-07-15",
+      "next_date": "2026-07-16",
+      "buy": 8.7,
+      "sell": 9.32,
+      "next_open": 8.7,
+      "next_close": 9.32,
+      "ret": 6.93,
+      "next_pct": 10.04,
+      "aa": 10.07,
+      "cc": 137.92,
+      "bottom_score": 80.1,
+      "bottom_vr": 5.41,
+      "signal_close": 8.47
     },
     {
       "code": "300803",
@@ -131,6 +148,20 @@
       "losses": 0
     },
     {
+      "date": "2026-07-15",
+      "n": 1,
+      "count": 1,
+      "success_rate": 100.0,
+      "avg_ret": 6.93,
+      "profit_factor": null,
+      "avg_win": 6.93,
+      "avg_loss": 0.0,
+      "max_ret": 6.93,
+      "min_ret": 6.93,
+      "wins": 1,
+      "losses": 0
+    },
+    {
       "date": "2026-10-23",
       "n": 1,
       "count": 1,
@@ -146,7 +177,7 @@
     }
   ],
   "cost_rate": 0.002,
-  "cached_ts": 1795662031.945975,
+  "cached_ts": 1795765937.539605,
   "method": "信号日T收盘两形态共振；T+1开盘买/收盘卖；收益扣除双边0.2%成本；成功率=盈利信号占比；盈亏比=平均盈利/abs(平均亏损)。纯历史日K重放，无未来函数。",
   "caveat": "CC 值在 REF(AA,3) 接近0时会因除以0.001而放大到极大值，属公式数学特性；统计只看次日收益，不受 CC 数值大小影响。样本数少，结论仅供验证参考。"
 }

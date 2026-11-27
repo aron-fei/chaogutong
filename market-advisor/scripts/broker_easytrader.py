@@ -23,7 +23,10 @@ import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(HERE, "broker_config.json")
-REPORTS_DIR = os.path.expanduser("/Users/williamli/Work/reports")
+REPORTS_DIR = os.environ.get(
+    "REPORTS_DIR",
+    os.path.join(os.path.expanduser(
+        os.environ.get("MARKET_MONITOR_DIR", "/Users/williamli/Work/market-monitor")), "reports"))
 LOG_PATH = os.path.join(REPORTS_DIR, "broker_exec_log.jsonl")
 
 

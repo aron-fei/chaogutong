@@ -40,7 +40,8 @@ set -u
 PY="${MARKET_PY:-/opt/homebrew/anaconda3/bin/python3}"
 SCRIPT_DIR="${SCRIPT_DIR:-${0:A:h}}"
 MONITOR_DIR="${MARKET_MONITOR_DIR:-$HOME/Work/market-monitor}"
-REPORT_DIR="${REPORTS_DIR:-$HOME/Work/reports}"
+# 2026-11-27 重构：报表默认目录 = 仓库根/reports（单根架构）；旧机软链兼容
+REPORT_DIR="${REPORTS_DIR:-$MONITOR_DIR/reports}"
 # 导出给子进程（review_gate.py / review_deep.py / suggestion_ledger.py）使用
 export REPORTS_DIR="$REPORT_DIR"
 export MARKET_MONITOR_DIR="$MONITOR_DIR"
@@ -184,7 +185,8 @@ log "工作台在线"
 "$PY" - <<'PYEOF' 2>&1 | tee -a "$RUNNER_LOG"
 import json, os, subprocess, sys, urllib.request
 
-GATE = os.path.join(os.environ.get("REPORTS_DIR", os.path.expanduser("~/Work/reports")), "trade_gate.json")
+GATE = os.path.join(os.environ.get("REPORTS_DIR", os.path.join(
+    os.path.expanduser(os.environ.get("MARKET_MONITOR_DIR", "~/Work/market-monitor")), "reports")), "trade_gate.json")
 DASH = "http://127.0.0.1:8765/api/dashboard"
 PY = "/opt/homebrew/anaconda3/bin/python3"
 MONITOR = os.environ.get("MARKET_MONITOR_DIR", os.path.expanduser("~/Work/market-monitor"))

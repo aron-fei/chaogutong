@@ -160,23 +160,40 @@ try:
           "整段丢失 = 事故的实际影响")
 
     # 5.2 重建态（09-30 基准）→ 两段都恢复
-    rebuilt_path = "/Users/williamli/Work/reports/strategy_state.json"
-    if os.path.exists(rebuilt_path):
-        rebuilt = json.load(open(rebuilt_path, encoding="utf-8"))
-        check("重建态：date 为上一交易日 2026-09-30（≠ 今日）",
-              rebuilt.get("date") == "2026-09-30", f"date={rebuilt.get('date')}")
-        check("重建态：旧龙基准存在（新华传媒）", rebuilt.get("dragons") == ["新华传媒"])
-        check("重建态：旧主线基准存在（医药/机器人/大消费）",
-              rebuilt.get("sectors") == ["医药", "机器人", "大消费"])
-        cross_ok = bool(rebuilt) and rebuilt.get("date") != _today
-        check("重建态：跨日分支将执行", cross_ok is True)
-        seg = ms.build_first_board_followup(rebuilt, "13:40")
-        check("重建态：首板新星追踪段恢复（含 09-30 标签 + 5 只判定）",
-              len(seg) > 5 and any("2026-09-30" in s for s in seg)
-              and sum(1 for s in seg if s.strip().startswith("•  ") or s.strip().startswith("• ")) >= 5,
-              f"{len(seg)} 行")
-    else:
-        check("重建态：state 文件存在", False, rebuilt_path)
+    # 【2026-11-26 修】此前这里读**真实** /Users/williamli/Work/reports/strategy_state.json
+    # 并断言它是 09-30 的基准 —— 但该文件每日被正常运行时覆盖（11-26 实际是
+    # date=2026-11-26 / 克来机电），于是 5 条断言恒假（与本测试要验证的逻辑无关）。
+    # 改为在临时目录里造一份 09-30 基准并**从磁盘读回**，既保留「重建后恢复跨日段」
+    # 的原意，又不再依赖被日常运行改写的真实文件。
+    rebuilt_path = os.path.join(tmpdir, "rebuilt_state.json")
+    rebuilt = {
+        "date": "2026-09-30",
+        "dragons": ["新华传媒"],
+        "top_leaders": ["新华传媒"],
+        "sectors": ["医药", "机器人", "大消费"],
+        "first_board_stars": [
+            {"name": "星一", "symbol": "600001.SH", "plates": ["医药"]},
+            {"name": "星二", "symbol": "600002.SH", "plates": ["机器人"]},
+            {"name": "星三", "symbol": "600003.SH", "plates": ["大消费"]},
+            {"name": "星四", "symbol": "600004.SH", "plates": ["医药"]},
+            {"name": "星五", "symbol": "600005.SH", "plates": ["机器人"]},
+        ],
+    }
+    with open(rebuilt_path, "w", encoding="utf-8") as f:
+        json.dump(rebuilt, f, ensure_ascii=False)
+    rebuilt = json.load(open(rebuilt_path, encoding="utf-8"))
+    check("重建态：date 为上一交易日 2026-09-30（≠ 今日）",
+          rebuilt.get("date") == "2026-09-30", f"date={rebuilt.get('date')}")
+    check("重建态：旧龙基准存在（新华传媒）", rebuilt.get("dragons") == ["新华传媒"])
+    check("重建态：旧主线基准存在（医药/机器人/大消费）",
+          rebuilt.get("sectors") == ["医药", "机器人", "大消费"])
+    cross_ok = bool(rebuilt) and rebuilt.get("date") != _today
+    check("重建态：跨日分支将执行", cross_ok is True)
+    seg = ms.build_first_board_followup(rebuilt, "13:40")
+    check("重建态：首板新星追踪段恢复（含 09-30 标签 + 5 只判定）",
+          len(seg) > 5 and any("2026-09-30" in s for s in seg)
+          and sum(1 for s in seg if s.strip().startswith("•  ") or s.strip().startswith("• ")) >= 5,
+          f"{len(seg)} 行")
 finally:
     ms.get_stock_price_sina = _orig_px
     ms.get_stock_detailed_sina = _orig_det

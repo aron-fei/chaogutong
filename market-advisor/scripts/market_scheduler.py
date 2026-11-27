@@ -21,9 +21,12 @@ _WECHAT_THREADS = []
 warnings.filterwarnings('ignore')
 
 # 目录与日志路径设定（跨机可移植：环境变量可覆盖，默认指向本机实际路径）
-REPORTS_DIR = os.path.expanduser(os.environ.get("REPORTS_DIR", "~/Work/reports"))
 # 工作台(market-monitor)仓库根；其它机器通过 MARKET_MONITOR_DIR 覆盖
 MARKET_MONITOR_DIR = os.environ.get("MARKET_MONITOR_DIR", "/Users/williamli/Work/market-monitor")
+# 2026-11-27 重构：报表目录并入仓库根 reports/（单根架构）；
+# 旧机器 ~/Work/reports 为软链兼容入口，新机克隆即同结构
+REPORTS_DIR = os.environ.get(
+    "REPORTS_DIR", os.path.join(os.path.expanduser(MARKET_MONITOR_DIR), "reports"))
 os.makedirs(REPORTS_DIR, exist_ok=True)
 STATE_FILE = os.path.join(REPORTS_DIR, 'strategy_state.json')
 INTRADAY_LOG_FILE = os.path.join(REPORTS_DIR, 'intraday_log.jsonl')

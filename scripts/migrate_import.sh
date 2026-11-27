@@ -24,8 +24,10 @@
 set -u
 
 BUNDLE="${1:-}"
-REPO_DIR="${MARKET_MONITOR_DIR:-${0:A:h}/..}"
-REPORT_DIR="${REPORTS_DIR:-$HOME/Work/reports}"
+REPO_DIR="${MARKET_MONITOR_DIR:-${0:A:h}/../..}"
+REPO_DIR="${REPO_DIR:A}"
+# 2026-11-27 重构：报表目录在仓库根内（单根架构）
+REPORT_DIR="${REPORTS_DIR:-$REPO_DIR/reports}"
 PY="${MARKET_PY:-/opt/homebrew/anaconda3/bin/python3}"
 OLD_HOME_PREFIX="${MARKET_MIGRATE_OLD_HOME:-/Users/williamli}"
 FAIL=0
@@ -76,14 +78,25 @@ for p in "$SRC/launchagents"/*.plist(N); do
   fi
 done
 
-note "==> [5/7] workbuddy 运行副本"
-if [ -d "$SRC/workbuddy/market-advisor" ]; then
-  mkdir -p "$HOME/.workbuddy/skills"
-  rsync -a "$SRC/workbuddy/market-advisor/" "$HOME/.workbuddy/skills/market-advisor/"
-  chmod +x "$HOME/.workbuddy/skills/market-advisor/scripts/"*.sh(N) 2>/dev/null
-  pass "~/.workbuddy/skills/market-advisor 恢复"
+note "==> [5/7] market-advisor 运行密钥 + workbuddy 软链"
+# 5a. gitignored 运行文件（broker_config.json / pushplus_token.txt / outputs/）
+if [ -d "$SRC/ma_runtime" ]; then
+  rsync -a "$SRC/ma_runtime/" "$REPO_DIR/market-advisor/scripts/" \
+    && pass "ma_runtime 密钥/输出恢复 → market-advisor/scripts/" \
+    || fail "ma_runtime 恢复失败"
 else
-  fail "bundle 里没有 workbuddy 副本"
+  note "  [INFO] bundle 无 ma_runtime（旧版包，跳过）"
+fi
+# 5b. workbuddy 软链（launchd plist 指向 ~/.workbuddy/skills/market-advisor/scripts/）
+mkdir -p "$HOME/.workbuddy/skills"
+if [ -e "$HOME/.workbuddy/skills/market-advisor" ] \
+   && [ ! -L "$HOME/.workbuddy/skills/market-advisor" ]; then
+  fail "~/.workbuddy/skills/market-advisor 已是实体目录（非软链），请先手工处理"
+else
+  ln -sfn "$REPO_DIR/market-advisor" "$HOME/.workbuddy/skills/market-advisor"
+  [ -f "$HOME/.workbuddy/skills/market-advisor/scripts/run_slot.sh" ] \
+    && pass "workbuddy 软链 → $REPO_DIR/market-advisor" \
+    || fail "workbuddy 软链创建异常"
 fi
 
 note "==> [6/7] 密钥环境变量"
@@ -108,7 +121,7 @@ if [ -x "$PY" ]; then
     && pass "依赖 akshare/pandas/requests 可导入" \
     || fail "依赖缺失：$PY -m pip install -r $REPO_DIR/requirements.lock.txt"
 fi
-cd "$REPO_DIR/market-advisor"
+cd "$REPO_DIR/market-advisor/scripts"
 ./run_slot.sh --selftest >/dev/null 2>&1 && pass "run_slot 自检" || fail "run_slot 自检"
 ./run_gate1535.sh --selftest >/dev/null 2>&1 && pass "run_gate1535 自检" || fail "run_gate1535 自检"
 [ -x "$PY" ] && "$PY" "$REPO_DIR/review_gate.py" --selftest >/dev/null 2>&1 \

@@ -16,7 +16,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "market-advisor"))
+# 2026-11-27 重构：market-advisor 的 .py/.sh 全部移入 market-advisor/scripts/ 子目录
+sys.path.insert(0, str(ROOT / "market-advisor" / "scripts"))
 
 import strategy_router as sr
 

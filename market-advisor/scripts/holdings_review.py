@@ -25,7 +25,10 @@ import argparse
 import subprocess
 from datetime import datetime, timedelta
 
-REPORTS_DIR = "/Users/williamli/Work/reports"
+REPORTS_DIR = os.environ.get(
+    "REPORTS_DIR",
+    os.path.join(os.path.expanduser(
+        os.environ.get("MARKET_MONITOR_DIR", "/Users/williamli/Work/market-monitor")), "reports"))
 
 
 def load_real_holdings():

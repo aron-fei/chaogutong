@@ -10,6 +10,14 @@ data/suggestions/
 data/review_modes/
 data/gate_history/
 
+# ---- 2026-11-27 单根重构：报表目录并入仓库根（运行时状态，不入库）----
+reports/
+
+# ---- market-advisor 运行密钥 / 本机产物（迁移走 migrate_export.sh 的 ma_runtime）----
+market-advisor/scripts/broker_config.json
+market-advisor/scripts/pushplus_token.txt
+market-advisor/scripts/outputs/
+
 # ---- 运行时抓取产物与缓存 ----
 data/*cache*/
 data/theme_cons_cache.json

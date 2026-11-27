@@ -11,19 +11,26 @@
 #   scripts/migrate_export.sh /path/to/out.tar.gz
 #
 # bundle 内部结构（全部相对路径，导入端自动映射到新机 $HOME）：
-#   reports/        ← $REPORTS_DIR（默认 ~/Work/reports，含闸门/模拟盘账户/历史报告）
+#   reports/        ← 仓库根/reports（默认 $MARKET_MONITOR_DIR/reports，含闸门/模拟盘账户/历史报告）
 #   data/           ← 仓库 data/ 全部运行时状态（排除可重建的 K 线缓存）
+#   ma_runtime/     ← market-advisor/scripts/ 的 gitignored 运行文件
+#                    （broker_config.json / pushplus_token.txt / outputs/）
 #   launchagents/   ← com.marketadvisor.* / com.marketmonitor.flask plists
-#   workbuddy/      ← ~/.workbuddy/skills/market-advisor（运行副本，去 .bak）
 #   env.sh          ← 从 ~/.zshrc 抓出的 PUSHPLUS_TOKEN 等推送密钥
 #   MANIFEST.txt    ← 原始路径 → 新路径的映射说明（导入脚本读它）
+#
+# 说明（2026-11-27 单根重构后）：代码 + 运行密钥 + 报表全部以仓库为单一根；
+#   ~/.workbuddy/skills/market-advisor 在旧机已是指向仓库的软链，不再需要打包
+#   —— 导入端会直接在新机创建同样的软链。
 #
 # 退出码：0 成功 / 2 环境异常
 # ---------------------------------------------------------------------------
 set -u
 
-REPO_DIR="${MARKET_MONITOR_DIR:-${0:A:h}/..}"
-REPORT_DIR="${REPORTS_DIR:-$HOME/Work/reports}"
+REPO_DIR="${MARKET_MONITOR_DIR:-${0:A:h}/../..}"
+REPO_DIR="${REPO_DIR:A}"
+# 2026-11-27 重构：报表目录在仓库根内（单根架构）
+REPORT_DIR="${REPORTS_DIR:-$REPO_DIR/reports}"
 STAMP="$(date +%Y%m%d)"
 OUT="${1:-$HOME/Desktop/market-monitor-migration_${STAMP}.tar.gz}"
 
@@ -54,15 +61,15 @@ for p in ~/Library/LaunchAgents/com.marketadvisor.*.plist \
   [ -f "$p" ] && /bin/cp "$p" "$STAGE/launchagents/"
 done
 
-print "==> [4/5] workbuddy 运行副本 + 推送密钥"
-if [ -d "$HOME/.workbuddy/skills/market-advisor" ]; then
-  mkdir -p "$STAGE/workbuddy"
-  rsync -a --exclude='*.bak_*' --exclude='*.bak' \
-        "$HOME/.workbuddy/skills/market-advisor/" \
-        "$STAGE/workbuddy/market-advisor/"
-else
-  print "    [WARN] ~/.workbuddy/skills/market-advisor 不存在，跳过"
-fi
+print "==> [4/5] market-advisor 运行密钥（gitignored）+ 推送密钥"
+MA_RT="$REPO_DIR/market-advisor/scripts"
+mkdir -p "$STAGE/ma_runtime"
+for f in broker_config.json pushplus_token.txt; do
+  [ -f "$MA_RT/$f" ] && /bin/cp "$MA_RT/$f" "$STAGE/ma_runtime/" \
+    && print "    打包 $f" || print "    [WARN] 缺 $MA_RT/$f"
+done
+[ -d "$MA_RT/outputs" ] && rsync -a "$MA_RT/outputs/" "$STAGE/ma_runtime/outputs/" \
+  || print "    [WARN] 缺 outputs/（历史提示产物，可无）"
 mkdir -p "$STAGE/env"
 : > "$STAGE/env/env.sh"
 /usr/bin/grep -E "PUSHPLUS_TOKEN|WORKBENCH_KEY" "$HOME/.zshrc" 2>/dev/null \
@@ -75,17 +82,19 @@ fi
 
 print "==> [5/5] MANIFEST + 打包"
 cat > "$STAGE/MANIFEST.txt" <<EOF
-market-monitor 迁移包 ${STAMP}
-- reports/   → 新机 \${REPORTS_DIR:-\$HOME/Work/reports}
-- data/      → 新机仓库根/data（合并，不删新机已有文件）
+market-monitor 迁移包 ${STAMP}（2026-11-27 单根架构版）
+- reports/     → 新机仓库根/reports（\${MARKET_MONITOR_DIR:-\$HOME/Work/market-monitor}/reports）
+- data/        → 新机仓库根/data（合并，不删新机已有文件）
+- ma_runtime/  → 新机仓库根/market-advisor/scripts/（broker_config.json/pushplus_token.txt/outputs）
 - launchagents/ → ~/Library/LaunchAgents（若新机用户名不同，导入脚本自动改写绝对路径）
-- workbuddy/market-advisor → ~/.workbuddy/skills/market-advisor
-- env/env.sh → 追加进新机 ~/.zshrc（若缺失）
+- env/env.sh   → 追加进新机 ~/.zshrc（若缺失）
+【导入端自动创建】
+- ~/.workbuddy/skills/market-advisor → 软链指向仓库 market-advisor（launchd plist 路径依赖它）
 【不进 bundle、需手动处理】
 - ~/.ssh 私钥与 config（git push 需要，出于安全不打包）
 - Python 环境：新机装 anaconda 或 pip install -r requirements.lock.txt
-- WorkBuddy 桌面应用 + 15:30 盘后复盘 automation（应用内配置，需在新机重装/重建；
-  闸门链已有 launchd 兜底，应用不装也不影响闸门生成）
+- WorkBuddy 桌面应用 + 15:30 盘后复盘 automation（可选；闸门链有 launchd 兜底，
+  机械版 recap 有 run_slot.sh 尾部钩子，应用不装不影响闸门与复盘产出）
 - Clash/代理配置（github/Gemini 需要）
 EOF
 

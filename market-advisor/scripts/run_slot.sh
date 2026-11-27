@@ -28,10 +28,11 @@ STAGE="${1:-}"
 # 跨机可移植：路径全部参数化，默认值适配本机；新机器通过环境变量覆盖
 PY="${MARKET_PY:-/opt/homebrew/anaconda3/bin/python3}"
 SCRIPT_DIR="${SCRIPT_DIR:-${0:A:h}}"          # 由本脚本位置推导，不写死
-REPORT_DIR="${REPORTS_DIR:-$HOME/Work/reports}"
-# 导出给 market_scheduler.py 使用（其默认路径为本机路径，新机器必须覆盖）
-export REPORTS_DIR="$REPORT_DIR"
+# 2026-11-27 重构：报表默认目录 = 仓库根/reports（单根架构）；
+# 旧机器 ~/Work/reports 为软链兼容入口，无需改 plist
 export MARKET_MONITOR_DIR="${MARKET_MONITOR_DIR:-$HOME/Work/market-monitor}"
+REPORT_DIR="${REPORTS_DIR:-$MARKET_MONITOR_DIR/reports}"
+export REPORTS_DIR="$REPORT_DIR"
 # 微信推送总开关（默认开；设 0 关闭）。token 读同目录 pushplus_token.txt 或环境变量 PUSHPLUS_TOKEN
 export WECHAT_PUSH_ENABLED="${WECHAT_PUSH_ENABLED:-1}"
 RUNNER_LOG="$REPORT_DIR/slot_runner.log"

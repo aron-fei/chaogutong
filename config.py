@@ -5,7 +5,9 @@ from pathlib import Path
 
 # ---- 统一路径基准（体检 P2-5）：其余模块一律从这里取，不再写死 /Users/... ----
 BASE_DIR = Path(__file__).resolve().parent
-REPORTS_DIR = Path(os.environ.get("REPORTS_DIR", str(BASE_DIR.parent / "reports")))
+# 2026-11-27 重构：报表目录并入仓库根（单根架构），默认 BASE_DIR/reports；
+# 旧机器 ~/Work/reports 已是软链兼容入口；新机克隆即得同结构。
+REPORTS_DIR = Path(os.environ.get("REPORTS_DIR", str(BASE_DIR / "reports")))
 MARKET_ADVISOR_SCRIPT = Path(os.environ.get(
     "MARKET_ADVISOR_SCRIPT",
     str(Path.home() / ".workbuddy/skills/market-advisor/scripts/market_scheduler.py")))

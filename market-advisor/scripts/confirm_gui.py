@@ -25,7 +25,11 @@ from tkinter import messagebox
 
 # ---------- 路径 ----------
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-REPORTS_DIR = os.path.expanduser("~/Work/reports")
+# 2026-11-27 重构：报表目录 = 仓库根/reports（单根架构），env 可覆盖
+REPORTS_DIR = os.environ.get(
+    "REPORTS_DIR",
+    os.path.join(os.path.expanduser(
+        os.environ.get("MARKET_MONITOR_DIR", "/Users/williamli/Work/market-monitor")), "reports"))
 DB_FILE = os.path.join(REPORTS_DIR, "backtest_database.json")
 MAIN_SCRIPT = os.path.join(SCRIPT_DIR, "market_scheduler.py")
 PYTHON_BIN = sys.executable or "/opt/homebrew/anaconda3/bin/python3"

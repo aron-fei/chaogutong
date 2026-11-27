@@ -14,7 +14,10 @@ from dotenv import load_dotenv
 # Load dotenv from my-chatbot/.env where GEMINI_API_KEY resides
 load_dotenv("/Users/williamli/Work/Python_Project/my-chatbot/.env")
 
-REPORTS_DIR = os.path.expanduser('/Users/williamli/Work/reports')
+REPORTS_DIR = os.environ.get(
+    "REPORTS_DIR",
+    os.path.join(os.path.expanduser(
+        os.environ.get("MARKET_MONITOR_DIR", "/Users/williamli/Work/market-monitor")), "reports"))
 INTEL_FILE = os.path.join(REPORTS_DIR, 'market_intel_briefs.json')
 
 # Gemini 候选模型：增强模式可用时自动回退
