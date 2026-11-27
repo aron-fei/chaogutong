@@ -219,6 +219,8 @@ bash scripts/rotate_logs.sh                 # DRY_RUN，确认后才加 --apply
 
 本仓库**只含代码**。要让另一台 macOS「和这台一样」，必须把下面三类**仓库外资产**一起搬过去——它们被 `.gitignore` 排除，不进版本库。
 
+**一键迁移（2026-11-27 新增）**：旧机 `scripts/migrate_export.sh` 打包（报告目录 + data 运行时状态 + LaunchAgents + workbuddy 运行副本 + 推送密钥，~10M，自动剔除可重建缓存）→ AirDrop/scp 传到新机 → 新机 clone 仓库后 `scripts/migrate_import.sh <bundle.tar.gz>`（自动改写用户名不同的 plist 路径、launchctl bootstrap、跑三套 selftest）。手动步骤见 7.1 / 7.2。
+
 ### 7.1 必须单独转移的资产（不要指望 git clone）
 
 | 资产 | 本机位置 | 说明 |
